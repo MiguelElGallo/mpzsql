@@ -376,7 +376,7 @@ class TLSCertificateLoader:
     """TLS certificate loading utilities for FlightSQL server.
     
     This class provides functionality to load TLS certificates and keys
-    for secure connections, following the same pattern as the C++ server.
+    for secure connections, following the same pattern as the Examples server.
     """
     
     @staticmethod

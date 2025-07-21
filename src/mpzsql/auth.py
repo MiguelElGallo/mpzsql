@@ -1,6 +1,6 @@
 """
 Authentication and session management for FlightSQL server.
-Implements JWT-based authentication similar to the C++ server.
+Implements JWT-based authentication similar to the Examples server.
 """
 
 import jwt
@@ -91,7 +91,7 @@ class AuthManager:
 class BearerAuthServerMiddleware:
     """
     Server middleware for Bearer token authentication.
-    Matches the C++ server's authentication approach.
+    Matches the Examples server's authentication approach.
     """
     
     def __init__(self, auth_manager: AuthManager):

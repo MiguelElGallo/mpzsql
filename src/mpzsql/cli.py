@@ -2,7 +2,7 @@
 CLI interface for MPZSQL server using typer.
 
 This module implements the command-line argument parsing and main entrypoint
-for the MPZSQL server, supporting all options from the original C++ implementation.
+for the MPZSQL server, supporting all options from the original Examples implementation.
 """
 
 import asyncio

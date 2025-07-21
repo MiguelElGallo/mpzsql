@@ -42,7 +42,7 @@ class FlightSQLCommands:
 
 
 class FlightSQLSchemas:
-    """Standard FlightSQL schemas matching C++ implementation."""
+    """Standard FlightSQL schemas matching Examples implementation."""
     
     @staticmethod
     def get_catalogs_schema() -> pa.Schema:
@@ -164,7 +164,7 @@ class FlightSQLMessageHandler:
         """
         Parse a CommandStatementQuery message and extract the SQL query.
         
-        This matches the C++ implementation's handling of statement queries.
+        This matches the Examples implementation's handling of statement queries.
         """
         try:
             # Handle protobuf encoding
@@ -187,7 +187,7 @@ class FlightSQLMessageHandler:
     @staticmethod
     def encode_transaction_query(query: str, transaction_id: str = "") -> bytes:
         """
-        Encode a query with transaction ID, matching C++ implementation.
+        Encode a query with transaction ID, matching Examples implementation.
         """
         if transaction_id:
             return f"{transaction_id}:{query}".encode("utf-8")
@@ -196,7 +196,7 @@ class FlightSQLMessageHandler:
     @staticmethod
     def decode_transaction_query(ticket: bytes) -> Tuple[str, str]:
         """
-        Decode a query with transaction ID, matching C++ implementation.
+        Decode a query with transaction ID, matching Examples implementation.
         """
         ticket_str = ticket.decode("utf-8")
         divider = ticket_str.find(":")
@@ -234,7 +234,7 @@ class FlightSQLMessageHandler:
 
 
 class FlightSQLServer:
-    """FlightSQL protocol support matching C++ implementation."""
+    """FlightSQL protocol support matching Examples implementation."""
 
     def __init__(self, backend, config):
         """Initialize FlightSQL support."""
@@ -246,7 +246,7 @@ class FlightSQLServer:
 
     def prepare_query_for_get_tables(self, command) -> str:
         """
-        Prepare SQL query for GetTables command, matching C++ implementation.
+        Prepare SQL query for GetTables command, matching Examples implementation.
         """
         parts = ["SELECT 'main' as catalog_name, null as db_schema_name, name as table_name, type as table_type FROM sqlite_master where 1=1"]
         
@@ -268,7 +268,7 @@ class FlightSQLServer:
 
     def prepare_query_for_get_imported_or_exported_keys(self, filter_clause: str) -> str:
         """
-        Prepare SQL query for imported/exported keys, matching C++ implementation.
+        Prepare SQL query for imported/exported keys, matching Examples implementation.
         """
         return f"""SELECT * FROM (SELECT NULL AS pk_catalog_name,
     NULL AS pk_db_schema_name,
@@ -306,7 +306,7 @@ class FlightSQLServer:
         """Handle FlightSQL-specific actions."""
         logger.debug(f"Handling FlightSQL action: {action_type}")
 
-        # Match C++ implementation action handling
+        # Match Examples implementation action handling
         if action_type == FlightSQLCommands.ACTION_CREATE_PREPARED_STATEMENT:
             return self._handle_create_prepared_statement(action_body)
         elif action_type == FlightSQLCommands.ACTION_CLOSE_PREPARED_STATEMENT:
@@ -335,7 +335,7 @@ class FlightSQLServer:
             # Parse request (simplified - full implementation would use protobuf)
             query = action_body.decode("utf-8")
             
-            # Generate random handle like C++ implementation
+            # Generate random handle like Examples implementation
             import random
             import string
             handle = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
@@ -366,7 +366,7 @@ class FlightSQLServer:
     def _handle_begin_transaction(self, action_body: bytes) -> pf.Result:
         """Handle BeginTransaction action."""
         try:
-            # Generate transaction ID like C++ implementation
+            # Generate transaction ID like Examples implementation
             import random
             import string
             transaction_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
@@ -400,9 +400,9 @@ class FlightSQLServer:
             return pf.Result(pa.py_buffer(b""))
 
     def _handle_get_catalogs_action(self) -> pf.Result:
-        """Handle CommandGetCatalogs action matching C++ implementation."""
+        """Handle CommandGetCatalogs action matching Examples implementation."""
         try:
-            # Match C++ implementation - return only "main"
+            # Match Examples implementation - return only "main"
             catalog_data = pa.table({
                 "catalog_name": ["main"]
             })
@@ -419,9 +419,9 @@ class FlightSQLServer:
             return pf.Result(pa.py_buffer(b""))
 
     def _handle_get_schemas_action(self, action_body: bytes) -> pf.Result:
-        """Handle CommandGetSchemas action matching C++ implementation."""
+        """Handle CommandGetSchemas action matching Examples implementation."""
         try:
-            # SQLite doesn't support schemas, return single unnamed schema like C++
+            # SQLite doesn't support schemas, return single unnamed schema like Examples
             schema_data = pa.table({
                 "catalog_name": ["main"],
                 "db_schema_name": [None]
@@ -515,7 +515,7 @@ class FlightSQLServer:
             return pf.Result(pa.py_buffer(b""))
 
 
-# Command classes matching C++ protobuf definitions
+# Command classes matching Examples protobuf definitions
 class CommandGetCatalogs:
     def Unpack(self, any_message):
         pass

@@ -2,7 +2,7 @@
 FlightSQL Server Base Implementation for Python.
 
 This module provides a FlightSQL server base class that mimics the functionality
-of the C++ arrow::flight::sql::FlightSqlServerBase class, automatically handling
+of the Examples arrow::flight::sql::FlightSqlServerBase class, automatically handling
 FlightSQL protocol details and command routing.
 """
 
@@ -39,7 +39,7 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
 
     This class provides the FlightSQL protocol handling and routes commands
     to appropriate abstract methods that must be implemented by subclasses.
-    This mimics the behavior of the C++ arrow::flight::sql::FlightSqlServerBase.
+    This mimics the behavior of the Examples arrow::flight::sql::FlightSqlServerBase.
     """
 
     def __init__(
