@@ -1,5 +1,7 @@
 # MPZSQL - Apache Arrow FlightSQL Server
 
+[![Tests](https://github.com/MiguelElGallo/mpzsql/actions/workflows/test.yml/badge.svg)](https://github.com/MiguelElGallo/mpzsql/actions/workflows/test.yml)
+
 MPZSQL is a Python implementation of an Apache Arrow FlightSQL server that supports DuckLake
 
 ## Features
