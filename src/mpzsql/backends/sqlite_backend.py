@@ -7,7 +7,7 @@ including query execution, schema introspection, and metadata operations.
 
 import logging
 import sqlite3
-from typing import Iterator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import pyarrow as pa
 
@@ -421,6 +421,12 @@ class SQLiteBackend(DatabaseBackend):
         non_null_values = [v for v in values if v is not None]
         
         if not non_null_values:
+            return pa.string()
+        
+        # Check if all non-null values are of the same type
+        first_type = type(non_null_values[0])
+        if not all(isinstance(v, first_type) for v in non_null_values):
+            # Mixed types - default to string
             return pa.string()
         
         # Check the type of the first non-null value

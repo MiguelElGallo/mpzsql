@@ -1,6 +1,6 @@
 """
 Transaction management for FlightSQL server.
-Implements transaction handling similar to the C++ server.
+Implements transaction handling similar to the Examples server.
 """
 
 import uuid
