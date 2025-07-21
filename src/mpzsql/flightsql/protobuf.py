@@ -1280,7 +1280,7 @@ class FlightSQLProtobuf:
         """
         Parse CreatePreparedStatement request to extract SQL.
 
-        This matches the C++ server's approach of extracting request.query from the protobuf.
+        This matches the Examples server's approach of extracting request.query from the protobuf.
         The structure is:
         - Any message with type_url and value
         - value contains ActionCreatePreparedStatementRequest with query field
@@ -1363,7 +1363,7 @@ class FlightSQLProtobuf:
         """
         Parse ClosePreparedStatement request to extract prepared statement handle.
 
-        This matches the C++ server's approach of extracting request.prepared_statement_handle from the protobuf.
+        This matches the Examples server's approach of extracting request.prepared_statement_handle from the protobuf.
         The structure is:
         - Any message with type_url and value
         - value contains ActionClosePreparedStatementRequest with prepared_statement_handle field
@@ -1744,13 +1744,13 @@ class FlightSQLProtobuf:
     @staticmethod
     def get_catalogs_schema():
         """Get the standard Flight SQL schema for GetCatalogs command."""
-        # Match C++ server: lowercase field name, regular string type
+        # Match Examples server: lowercase field name, regular string type
         return pa.schema([("catalog_name", pa.string())])
 
     @staticmethod
     def get_db_schemas_schema():
         """Get the standard Flight SQL schema for GetDbSchemas command."""
-        # Match C++ server: lowercase field names
+        # Match Examples server: lowercase field names
         return pa.schema(
             [
                 ("catalog_name", pa.string()),
@@ -1825,7 +1825,7 @@ class FlightSQLProtobuf:
     @staticmethod
     def get_primary_keys_schema():
         """Get the standard Flight SQL schema for GetPrimaryKeys command."""
-        # Match C++ server: lowercase field names
+        # Match Examples server: lowercase field names
         return pa.schema([
             ("catalog_name", pa.string()),
             ("schema_name", pa.string()),
@@ -1925,7 +1925,7 @@ class FlightSQLProtobuf:
 
     @staticmethod
     def get_type_mapping():
-        """Get mapping from database types to Arrow types, matching C++ implementation."""
+        """Get mapping from database types to Arrow types, matching Examples implementation."""
         return {
             # Numeric types
             'INTEGER': pa.int32(),
