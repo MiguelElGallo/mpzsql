@@ -2,14 +2,85 @@
 
 [![Tests](https://github.com/MiguelElGallo/mpzsql/actions/workflows/test.yml/badge.svg)](https://github.com/MiguelElGallo/mpzsql/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/MiguelElGallo/mpzsql/branch/main/graph/badge.svg?token=FFX8G2S7X9)](https://codecov.io/gh/MiguelElGallo/mpzsql)
-MPZSQL is a Python implementation of an Apache Arrow FlightSQL server that supports DuckLake
+
+MPZSQL is a Python implementation of an Apache Arrow FlightSQL server that supports DuckLake.
+
+See these resources for more understanding:
+
+- [My initial idea](https://www.linkedin.com/pulse/thinking-ducklake-architecture-miguel-peredo-z%25C3%25BCrcher-lt5ff/?trackingId=2dHjs0mPQGi8Y3YKEIshhw%3D%3D)
+- A [demo of what you can achieve](https://www.youtube.com/watch?v=-Dx_qz7s-Ds) if you make it run. 
+
+***Note*** The azure part showed in the video is not part of this repository, that you will need to figure by yourself, at least for now.
+
+
+## Warning!
+
+This software is in experimental state. I have not tested the security features yet. The software it uses like [DuckLake](https://github.com/duckdb/ducklake) is also in experimental state. (As of July 2025)
+
+***Do NOT use in production!***
+
+## Minimum Configuration for Starting in DuckLake Mode
+
+### Azure Login 
+
+Make sure you are authenticated with Azure CLI:
+
+```bash
+az login
+```
+
+The server relies on Azure Identity's [DefaultAzureCredential](https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme?view=azure-python#defaultazurecredential), so it will automatically pick up the credentials produced by `az login` when it runs.  
+The Azure account you use (or you log in with) **must have data-plane permissions on the storage account** that hosts your DuckLake files:
+
+1. Storage Blob Data **Contributor** (if you need write access)
+
+You can grant those roles at the storage-account or container scope.  
+See Microsoft's documentation for details:
+
+* Assign data-plane roles –  
+  https://learn.microsoft.com/azure/storage/common/storage-auth-aad-rbac-portal  
+* Role definitions –  
+  https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#storage-blob-data-roles
+
+Without the correct data-plane privileges, the server will fail when it tries to list, read, or write blobs.
+
+### Running the Server
+
+Set all the environment variables like: POSTGRESQL_SERVER, POSTGRESQL_USER, etc. and then run the following command:
+
+```shell
+uv run python -m mpzsql.cli \
+  --database "localconf.duckdb" \
+  --print-queries \
+  --secret-key "test-secret-key" \
+  --postgresql-server "$POSTGRESQL_SERVER" \
+  --postgresql-port "$POSTGRESQL_PORT" \
+  --postgresql-user "$POSTGRESQL_USER" \
+  --postgresql-password "$POSTGRESQL_PASSWORD" \
+  --postgresql-catalogdb "$POSTGRESQL_CATALOGDB" \
+  --azure-storage-account "$AZURE_STORAGE_ACCOUNT" \
+  --azure-storage-container "$AZURE_STORAGE_CONTAINER"
+```
+
+The PostgreSQL database must exist, as [mentioned](https://ducklake.select/docs/stable/duckdb/usage/choosing_a_catalog_database#postgresql).
+
+The server is verbose and creates 5 log files, check the root folder.
+
+### Testing with a Client
+
+The server will run on localhost port 8080. You can use any JDBC client to connect, with a connection string like:
+`jdbc:arrow-flight-sql://localhost:8080?useEncryption=false&disableCertificateVerification=true`
+
+I have tested with DBeaver, and I found this [guide](https://github.com/voltrondata/setup-arrow-jdbc-driver-in-dbeaver).
+
+### Notes about Logfire
+
+The server can send logs to [Logfire](https://logfire.pydantic.dev/docs/why/). Just set the environment variable `LOGFIRE_WRITE_TOKEN`.
 
 ## Features
 
 - Apache Arrow FlightSQL interface
 - JDBC interface
-
-
 
 ## Configuration Options
 
@@ -86,58 +157,15 @@ MPZSQL can be configured using command-line switches or environment variables. E
 ### Notes
 
 - Both `--tls-cert` and `--tls-key` must be provided together
-- SQLite backend requires the `--database` option
 - The `MPZSQL_PORT` environment variable takes precedence over the `--port` CLI option
 - For Azure AD authentication with PostgreSQL, set `--postgresql-password AZURE`
 - The `WEBSITE_HOSTNAME` environment variable is automatically set by Azure Web Apps
 
-## Starting the server 
+## Starting the Server 
 
-Check the with:
+Check the help with:
 ```shell
 uv run python -m mpzsql.cli --help
-```
-
-## Minimum configuration for starting in ducklake mode
-
-### Azure login 
-
-Make sure you have already authenticated with Azure CLI:
-
-```bash
-az login
-```
-
-The server relies on Azure Identity’s `DefaultAzureCredential`, so it will automatically pick up the credentials produced by `az login` when it runs.  
-The Azure account you use **must have data-plane permissions on the storage account** that hosts your DuckLake files:
-
-
-1. Storage Blob Data **Contributor** (if you need write access)
-
-You can grant those roles at the storage-account or container scope.  
-See Microsoft’s documentation for details:
-
-* Assign data-plane roles –  
-  https://learn.microsoft.com/azure/storage/common/storage-auth-aad-rbac-portal  
-* Role definitions –  
-  https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#storage-blob-data-roles
-
-Without the correct data-plane privileges the server will fail when it tries to list, read or write blobs.
-
-
-### Running the server 
-```shell
-uv run python -m mpzsql.cli \
-  --database "localconf.duckdb" \
-  --print-queries \
-  --secret-key "test-secret-key" \
-  --postgresql-server "$POSTGRESQL_SERVER" \
-  --postgresql-port "$POSTGRESQL_PORT" \
-  --postgresql-user "$POSTGRESQL_USER" \
-  --postgresql-password "$POSTGRESQL_PASSWORD" \
-  --postgresql-catalogdb "$POSTGRESQL_CATALOGDB" \
-  --azure-storage-account "$AZURE_STORAGE_ACCOUNT" \
-  --azure-storage-container "$AZURE_STORAGE_CONTAINER"
 ```
 
 ## Development
