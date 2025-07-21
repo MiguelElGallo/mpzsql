@@ -8,7 +8,7 @@ testing the protobuf parsing, command creation, and schema generation functional
 import pytest
 from unittest.mock import patch
 import pyarrow as pa
-
+from urllib.parse import urlparse
 from mpzsql.flightsql.protobuf import FlightSQLProtobuf
 
 
@@ -125,7 +125,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert hasattr(self.protobuf, url_constant)
             url_value = getattr(self.protobuf, url_constant)
             assert isinstance(url_value, str)
-            assert "type.googleapis.com" in url_value
+            assert urlparse(url_value).hostname == "type.googleapis.com"
 
     def test_action_type_urls_constants(self):
         """Test that action type URLs are defined."""
