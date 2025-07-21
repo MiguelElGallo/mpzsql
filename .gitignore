@@ -216,3 +216,5 @@ __marimo__/
 # Temporary files
 test_postgresql_config.sh
 
+.DS_Store
+.DS_Store
