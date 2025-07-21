@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import patch
 import pyarrow as pa
 from google.protobuf import any_pb2
-
+from urllib.parse import urlparse
 from mpzsql.flightsql.protobuf import (
     FlightSQLProtobuf,
     parse_any_command,
@@ -556,7 +556,9 @@ class TestFlightSQLProtobufComprehensive:
             assert hasattr(self.protobuf, constant_name)
             value = getattr(self.protobuf, constant_name)
             assert isinstance(value, str)
-            assert "type.googleapis.com" in value
+            # Ensure host is exactly 'type.googleapis.com'
+            parsed_url = urlparse(value)
+            assert parsed_url.netloc == "type.googleapis.com"
             assert "arrow.flight.protocol.sql" in value
     
     # ===============================
