@@ -125,7 +125,8 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert hasattr(self.protobuf, url_constant)
             url_value = getattr(self.protobuf, url_constant)
             assert isinstance(url_value, str)
-            assert urlparse(url_value).hostname == "type.googleapis.com"
+            parsed_url = urlparse(url_value)
+            assert parsed_url.hostname == "type.googleapis.com"
 
     def test_action_type_urls_constants(self):
         """Test that action type URLs are defined."""
