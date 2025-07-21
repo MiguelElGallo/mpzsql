@@ -341,7 +341,7 @@ class DuckDBBackend(DatabaseBackend):
     def get_catalogs(self) -> pa.Table:
         """Get available catalogs as an Arrow table."""
         try:
-            # Use the same query as C++ implementation
+            # Use the same query as Examples implementation
             query = "SELECT DISTINCT catalog_name FROM information_schema.schemata ORDER BY catalog_name"
             duckdb_log.info(f"get_catalogs() - Executing query: {query}")
             fh.flush()
@@ -382,7 +382,7 @@ class DuckDBBackend(DatabaseBackend):
     def get_schemas(self, catalog: Optional[str] = None) -> List[Tuple[str, str]]:
         """Get available schemas for a catalog, returns (catalog, schema) tuples."""
         try:
-            # Use the same query structure as C++ implementation
+            # Use the same query structure as Examples implementation
             query = """
             SELECT catalog_name, schema_name AS db_schema_name 
             FROM information_schema.schemata 
@@ -391,7 +391,7 @@ class DuckDBBackend(DatabaseBackend):
             
             params = []
             
-            # Match C++ server behavior: use CURRENT_DATABASE() when catalog is None
+            # Match Examples server behavior: use CURRENT_DATABASE() when catalog is None
             if catalog is not None:
                 query += " AND catalog_name = ?"
                 params.append(catalog)
@@ -463,7 +463,7 @@ class DuckDBBackend(DatabaseBackend):
         """
 
         params = []
-        # Match C++ server behavior: use CURRENT_DATABASE() when catalog is None
+        # Match Examples server behavior: use CURRENT_DATABASE() when catalog is None
         # This is correct for FlightSQL protocol - JDBC GUIs should call getTables(catalogName) for each catalog
         if catalog is not None:
             query += " AND table_catalog = ?"
@@ -858,7 +858,7 @@ class DuckDBBackend(DatabaseBackend):
             
             params = []
             
-            # Match C++ server behavior: use CURRENT_DATABASE() when catalog is None
+            # Match Examples server behavior: use CURRENT_DATABASE() when catalog is None
             # This is correct for FlightSQL protocol - JDBC GUIs should call getSchemas(catalogName) for each catalog
             if catalog is not None:
                 query += " AND catalog_name = ?"

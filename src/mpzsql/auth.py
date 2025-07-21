@@ -1,10 +1,9 @@
 """
 Authentication and session management for FlightSQL server.
-Implements JWT-based authentication similar to the C++ server.
+Implements JWT-based authentication similar to the Examples server.
 """
 
 import jwt
-import time
 import uuid
 import logging
 from typing import Optional, Dict, Any
@@ -51,6 +50,10 @@ class AuthManager:
     def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Validate a JWT token and return the payload if valid."""
         try:
+            # Handle None or empty token
+            if not token:
+                return None
+                
             # Remove 'Bearer ' prefix if present
             if token.startswith('Bearer '):
                 token = token[7:]
@@ -80,7 +83,12 @@ class AuthManager:
         expired_sessions = []
         
         for session_id, session in self.sessions.items():
-            if current_time - session['last_activity'] > timedelta(hours=self.token_expiry_hours):
+            try:
+                last_activity = session.get('last_activity')
+                if last_activity and current_time - last_activity > timedelta(hours=self.token_expiry_hours):
+                    expired_sessions.append(session_id)
+            except (TypeError, AttributeError):
+                # Handle corrupted session data by removing it
                 expired_sessions.append(session_id)
         
         for session_id in expired_sessions:
@@ -91,7 +99,7 @@ class AuthManager:
 class BearerAuthServerMiddleware:
     """
     Server middleware for Bearer token authentication.
-    Matches the C++ server's authentication approach.
+    Matches the Examples server's authentication approach.
     """
     
     def __init__(self, auth_manager: AuthManager):

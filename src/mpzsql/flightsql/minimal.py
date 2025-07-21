@@ -98,7 +98,7 @@ actions_log.info(
 )
 
 
-# SQL Info enums (matching C++ implementation)
+# SQL Info enums (matching Examples implementation)
 class SqlInfo:
     FLIGHT_SQL_SERVER_NAME = 0
     FLIGHT_SQL_SERVER_VERSION = 1
@@ -186,18 +186,18 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         **kwargs,
     ):
         """Initialize the minimal FlightSQL server."""
-        # Setup authentication using C++ server pattern: NoOpAuthHandler + middleware
+        # Setup authentication using Examples server pattern: NoOpAuthHandler + middleware
         auth_handler = NoOpAuthHandler()
         middleware = {}
 
         if config.is_auth_enabled:
-            # Create middleware factories following C++ implementation pattern
+            # Create middleware factories following Examples implementation pattern
             header_middleware = HeaderAuthServerMiddlewareFactory(
                 config.username, config.password, config.secret_key
             )
             bearer_middleware = BearerAuthServerMiddlewareFactory(config.secret_key)
 
-            # Add middleware in the same order as C++ server
+            # Add middleware in the same order as Examples server
             middleware = {
                 "header-auth-server": header_middleware,
                 "bearer-auth-server": bearer_middleware,
@@ -207,7 +207,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         else:
             logger.info("Authentication disabled - server is open to all")
 
-        # Configure TLS options if enabled (following C++ server pattern)
+        # Configure TLS options if enabled (following Examples server pattern)
         tls_certificates = None
         root_certificates = None
         verify_client = False
@@ -243,10 +243,10 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         self.backend = backend
         self.config = config
         self.prepared_statements: Dict[str, Dict[str, Any]] = {}
-        # Add transaction and session management like C++ implementation
+        # Add transaction and session management like Examples implementation
         self.open_transactions: Dict[str, str] = {}  # transaction_id -> connection_id
         self.open_sessions: Dict[str, Any] = {}  # session_id -> connection
-        self._mutex = threading.Lock()  # Similar to C++ mutex
+        self._mutex = threading.Lock()  # Similar to Examples mutex
         self._transaction_counter = 0
 
         # Test actions log
@@ -258,7 +258,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         actions = [
             pf.ActionType("CreatePreparedStatement", "Create a prepared statement"),
             pf.ActionType("ClosePreparedStatement", "Close a prepared statement"),
-            # Add transaction actions like C++ implementation
+            # Add transaction actions like Examples implementation
             pf.ActionType("BeginTransaction", "Begin a transaction"),
             pf.ActionType("EndTransaction", "End a transaction"),
         ]
@@ -305,7 +305,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             raise NotImplementedError(f"Action {action_type} not implemented.")
 
     def _begin_transaction(self, action_body: bytes) -> pf.Result:
-        """Handle BeginTransaction action (matching C++ implementation)."""
+        """Handle BeginTransaction action (matching Examples implementation)."""
         try:
             request = ActionBeginTransactionRequest()
             request.ParseFromString(action_body)
@@ -314,7 +314,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 self._transaction_counter += 1
                 transaction_id = f"txn_{self._transaction_counter}"
 
-                # In C++, they create a new connection for the transaction
+                # In Examples, they create a new connection for the transaction
                 # Here we'll track the transaction state
                 self.open_transactions[transaction_id] = "active"
 
@@ -330,7 +330,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             raise
 
     def _end_transaction(self, action_body: bytes) -> pf.Result:
-        """Handle EndTransaction action (matching C++ implementation)."""
+        """Handle EndTransaction action (matching Examples implementation)."""
         try:
             request = ActionEndTransactionRequest()
             request.ParseFromString(action_body)
@@ -765,7 +765,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                         f"Prepared statement handle not found: {handle.hex()}"
                     )
 
-                # Read parameter bindings from the reader (matching C++ implementation)
+                # Read parameter bindings from the reader (matching Examples implementation)
                 parameter_batches = []
                 while True:
                     try:
@@ -855,7 +855,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             )
 
     def _create_prepared_statement(self, action_body: bytes) -> pf.Result:
-        """Handle CreatePreparedStatement action (matching C++ implementation)."""
+        """Handle CreatePreparedStatement action (matching Examples implementation)."""
         try:
             actions_log.info("2. Command arguments: Creating prepared statement")
             actions_handler.flush()
@@ -877,7 +877,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             logger.info(f"Creating prepared statement for query: {query}")
             print(f"SERVER: Creating prepared statement for query: '{query}'")
 
-            # Generate handle as bytes (matching C++ GenerateRandomString converted to bytes)
+            # Generate handle as bytes (matching Examples GenerateRandomString converted to bytes)
             handle_bytes = uuid.uuid4().bytes
             handle_key = (
                 handle_bytes.hex()
@@ -886,7 +886,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             routing_log.info(f"Generated handle bytes: {handle_bytes.hex()}")
             print(f"SERVER: Generated handle bytes: {handle_bytes.hex()}")
 
-            # Determine if this is a SELECT query (matching C++ logic)
+            # Determine if this is a SELECT query (matching Examples logic)
             query_upper = query.strip().upper()
             is_select_query = query_upper.startswith(
                 "SELECT "
@@ -924,7 +924,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 )
                 actions_handler.flush()
 
-            # Store prepared statement (matching C++ prepared_statements_ map)
+            # Store prepared statement (matching Examples prepared_statements_ map)
             self.prepared_statements[handle_key] = {
                 "sql": query,
                 "schema": schema,
@@ -937,7 +937,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             )
             print(f"SERVER: STORED prepared statement with handle_key: '{handle_key}'")
 
-            # CRITICAL: Match C++ behavior for dataset_schema inclusion
+            # CRITICAL: Match Examples behavior for dataset_schema inclusion
             # For SELECT queries: include dataset_schema → JDBC calls DoGetPreparedStatement (do_get)
             # For UPDATE/INSERT/DELETE: exclude dataset_schema → JDBC calls DoPutPreparedStatementUpdate (do_put)
             if is_select_query:
@@ -1210,6 +1210,13 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             actions_log.info(f"4. Reply by DuckDB: ERROR - {e}")
             actions_log.info("5. Reply sent back: Error")
             raise e
+
+    def _parse_statement_query(self, any_command) -> CommandStatementQuery:
+        """Parse CommandStatementQuery from Any message."""
+        query = FlightSQLProtobuf.parse_command_statement_query(any_command.value)
+        command = CommandStatementQuery()
+        command.query = query or ""
+        return command
 
     def _parse_prepared_statement_query(
         self, any_command

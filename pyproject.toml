@@ -22,6 +22,7 @@ dependencies = [
     "pytest>=8.4.1",
     "coverage>=7.9.2",
     "logfire>=3.24.0",
+    "pytest-cov>=6.2.1",
 ]
 
 [project.scripts]
