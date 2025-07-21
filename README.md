@@ -139,3 +139,32 @@ uv run python -m mpzsql.cli \
   --azure-storage-account "$AZURE_STORAGE_ACCOUNT" \
   --azure-storage-container "$AZURE_STORAGE_CONTAINER"
 ```
+
+## Development
+
+### Running Tests
+
+Tests can be run locally using:
+
+```bash
+uv run pytest tests/ -v
+```
+
+For coverage reporting:
+
+```bash
+uv run coverage run -m pytest tests/
+uv run coverage report
+uv run coverage xml
+```
+
+### Setting up Codecov (Optional)
+
+If you want to enable code coverage reporting to Codecov in GitHub Actions, you need to:
+
+1. Create a free account at [codecov.io](https://codecov.io)
+2. Add your repository to Codecov
+3. Get your repository's upload token from Codecov
+4. Add the token as a repository secret named `CODECOV_TOKEN` in your GitHub repository settings
+
+Without this token, the Codecov upload step will be skipped in the CI pipeline, but all tests will still run successfully.
