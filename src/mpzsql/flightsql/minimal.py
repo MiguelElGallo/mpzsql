@@ -1211,6 +1211,13 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             actions_log.info("5. Reply sent back: Error")
             raise e
 
+    def _parse_statement_query(self, any_command) -> CommandStatementQuery:
+        """Parse CommandStatementQuery from Any message."""
+        query = FlightSQLProtobuf.parse_command_statement_query(any_command.value)
+        command = CommandStatementQuery()
+        command.query = query or ""
+        return command
+
     def _parse_prepared_statement_query(
         self, any_command
     ) -> CommandPreparedStatementQuery:
