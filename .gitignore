@@ -216,7 +216,8 @@ __marimo__/
 # Temporary files
 test_postgresql_config.sh
 
-.DS_Store
-.DS_Store
-.DS_Store
+# Test certificates and artifacts
+test_certs/
+*test*certs*/
+
 .DS_Store
