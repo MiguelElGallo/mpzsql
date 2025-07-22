@@ -7,6 +7,7 @@ including query execution, schema introspection, and metadata operations.
 
 import logging
 import sqlite3
+import threading
 from typing import List, Optional, Tuple
 
 import pyarrow as pa
@@ -25,6 +26,9 @@ class SQLiteBackend(DatabaseBackend):
     def __init__(self, config: ServerConfig):
         """Initialize SQLite backend."""
         super().__init__(config)
+        
+        # Add thread lock for concurrent access safety
+        self._lock = threading.Lock()
         
         if not config.database:
             raise ValueError("SQLite backend requires a database file")
@@ -57,130 +61,135 @@ class SQLiteBackend(DatabaseBackend):
     
     def execute_sql(self, sql: str) -> None:
         """Execute SQL commands without returning results."""
-        try:
-            cursor = self.connection.cursor()
-            # Execute potentially multiple statements
-            cursor.executescript(sql)
-            cursor.close()
-            logger.debug(f"Executed SQL: {sql[:100]}...")
-        except Exception as e:
-            logger.error(f"SQL execution failed: {e}")
-            raise
+        with self._lock:  # Ensure thread-safe access
+            try:
+                cursor = self.connection.cursor()
+                # Execute potentially multiple statements
+                cursor.executescript(sql)
+                cursor.close()
+                logger.debug(f"Executed SQL: {sql[:100]}...")
+            except Exception as e:
+                logger.error(f"SQL execution failed: {e}")
+                raise
     
     def execute_query(self, query: str) -> pa.Table:
         """Execute a query and return an Arrow Table."""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute(query)
-            
-            # Get column information
-            columns = [desc[0] for desc in cursor.description]
-            
-            # Fetch all rows (for simplicity - in production, this should be chunked)
-            rows = cursor.fetchall()
-            cursor.close()
-            
-            if not rows:
-                # Empty result
-                schema = self._infer_schema_from_cursor_description(cursor.description)
-                empty_batch = pa.record_batch(
-                    [pa.array([], type=field.type) for field in schema],
-                    schema=schema
-                )
-                return pa.Table.from_batches([empty_batch])
-            
-            # Convert to Arrow format
-            # First, we need to infer types from the data
-            arrow_arrays = []
-            schema_fields = []
-            
-            for i, column_name in enumerate(columns):
-                # Extract column values
-                column_values = [row[i] for row in rows]
+        with self._lock:  # Ensure thread-safe access
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query)
                 
-                # Infer Arrow type and create array
-                arrow_type = self._infer_arrow_type(column_values)
-                arrow_array = pa.array(column_values, type=arrow_type)
+                # Get column information
+                columns = [desc[0] for desc in cursor.description]
                 
-                arrow_arrays.append(arrow_array)
-                schema_fields.append(pa.field(column_name, arrow_type))
-            
-            # Create schema and record batch
-            schema = pa.schema(schema_fields)
-            batch = pa.record_batch(arrow_arrays, schema=schema)
-            
-            # Return as Table
-            return pa.Table.from_batches([batch])
-            
-        except Exception as e:
-            logger.error(f"Query execution failed: {e}")
-            raise
+                # Fetch all rows (for simplicity - in production, this should be chunked)
+                rows = cursor.fetchall()
+                cursor.close()
+                
+                if not rows:
+                    # Empty result
+                    schema = self._infer_schema_from_cursor_description(cursor.description)
+                    empty_batch = pa.record_batch(
+                        [pa.array([], type=field.type) for field in schema],
+                        schema=schema
+                    )
+                    return pa.Table.from_batches([empty_batch])
+                
+                # Convert to Arrow format
+                # First, we need to infer types from the data
+                arrow_arrays = []
+                schema_fields = []
+                
+                for i, column_name in enumerate(columns):
+                    # Extract column values
+                    column_values = [row[i] for row in rows]
+                    
+                    # Infer Arrow type and create array
+                    arrow_type = self._infer_arrow_type(column_values)
+                    arrow_array = pa.array(column_values, type=arrow_type)
+                    
+                    arrow_arrays.append(arrow_array)
+                    schema_fields.append(pa.field(column_name, arrow_type))
+                
+                # Create schema and record batch
+                schema = pa.schema(schema_fields)
+                batch = pa.record_batch(arrow_arrays, schema=schema)
+                
+                # Return as Table
+                return pa.Table.from_batches([batch])
+                
+            except Exception as e:
+                logger.error(f"Query execution failed: {e}")
+                raise
     
     def get_statement_schema(self, query: str) -> pa.Schema:
         """Get the schema for a SQL statement without executing it."""
-        try:
-            # Use EXPLAIN QUERY PLAN to understand the query structure
-            cursor = self.connection.cursor()
-            
-            # For SQLite, we'll execute with LIMIT 0 to get schema
-            limited_query = f"SELECT * FROM ({query}) LIMIT 0"
-            cursor.execute(limited_query)
-            
-            schema = self._infer_schema_from_cursor_description(cursor.description)
-            cursor.close()
-            
-            return schema
-            
-        except Exception as e:
-            logger.error(f"Schema analysis failed: {e}")
-            # Fallback: try PRAGMA table_info if it's a simple table query
+        with self._lock:  # Ensure thread-safe access
             try:
-                # Very basic parsing to extract table name
-                query_upper = query.strip().upper()
-                if query_upper.startswith("SELECT") and "FROM" in query_upper:
-                    # This is a very simplified approach
-                    # In production, you'd want a proper SQL parser
-                    pass
+                # Use EXPLAIN QUERY PLAN to understand the query structure
+                cursor = self.connection.cursor()
                 
-                # For now, return a generic schema
-                return pa.schema([pa.field("result", pa.string())])
+                # For SQLite, we'll execute with LIMIT 0 to get schema
+                limited_query = f"SELECT * FROM ({query}) LIMIT 0"
+                cursor.execute(limited_query)
                 
-            except Exception:
-                raise e
+                schema = self._infer_schema_from_cursor_description(cursor.description)
+                cursor.close()
+                
+                return schema
+                
+            except Exception as e:
+                logger.error(f"Schema analysis failed: {e}")
+                # Fallback: try PRAGMA table_info if it's a simple table query
+                try:
+                    # Very basic parsing to extract table name
+                    query_upper = query.strip().upper()
+                    if query_upper.startswith("SELECT") and "FROM" in query_upper:
+                        # This is a very simplified approach
+                        # In production, you'd want a proper SQL parser
+                        pass
+                    
+                    # For now, return a generic schema
+                    return pa.schema([pa.field("result", pa.string())])
+                    
+                except Exception:
+                    raise e
     
     def execute_update(self, query: str) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute(query)
-            affected_rows = cursor.rowcount
-            cursor.close()
-            logger.debug(f"Update query affected {affected_rows} rows")
-            return affected_rows
-        except Exception as e:
-            logger.error(f"Update query execution failed: {e}")
-            raise
+        with self._lock:  # Ensure thread-safe access
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute(query)
+                affected_rows = cursor.rowcount
+                cursor.close()
+                logger.debug(f"Update query affected {affected_rows} rows")
+                return affected_rows
+            except Exception as e:
+                logger.error(f"Update query execution failed: {e}")
+                raise
 
     def get_catalogs(self) -> pa.Table:
         """Get available catalogs as an Arrow table."""
         # SQLite has a single catalog (main database)
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute("PRAGMA database_list")
-            databases = cursor.fetchall()
-            cursor.close()
-            
-            catalog_names = [db[1] for db in databases]  # database name is in column 1
-            
-            # Return as Arrow table
-            return pa.table({
-                "catalog_name": catalog_names
-            })
-        except Exception as e:
-            logger.warning(f"Could not get catalogs: {e}")
-            return pa.table({
-                "catalog_name": ["main"]
-            })
+        with self._lock:  # Ensure thread-safe access
+            try:
+                cursor = self.connection.cursor()
+                cursor.execute("PRAGMA database_list")
+                databases = cursor.fetchall()
+                cursor.close()
+                
+                catalog_names = [db[1] for db in databases]  # database name is in column 1
+                
+                # Return as Arrow table
+                return pa.table({
+                    "catalog_name": catalog_names
+                })
+            except Exception as e:
+                logger.warning(f"Could not get catalogs: {e}")
+                return pa.table({
+                    "catalog_name": ["main"]
+                })
 
     def get_schemas(self, catalog: Optional[str] = None) -> List[Tuple[str, str]]:
         """Get available schemas for a catalog, returns (catalog, schema) tuples."""
@@ -198,77 +207,78 @@ class SQLiteBackend(DatabaseBackend):
         include_schema: bool = False
     ) -> pa.Table:
         """Get available tables with their metadata as an Arrow table."""
-        try:
-            cursor = self.connection.cursor()
-            
-            # Get all tables and views
-            query = """
-            SELECT name, type FROM sqlite_master 
-            WHERE type IN ('table', 'view')
-            """
-            
-            params = []
-            
-            if table_name_filter_pattern:
-                query += " AND name LIKE ?"
-                params.append(table_name_filter_pattern)
-            
-            if table_types:
-                # Convert to SQLite types
-                sqlite_types = []
-                for t in table_types:
-                    if t.upper() in ["BASE TABLE", "TABLE"]:
-                        sqlite_types.append("table")
-                    elif t.upper() == "VIEW":
-                        sqlite_types.append("view")
+        with self._lock:  # Ensure thread-safe access
+            try:
+                cursor = self.connection.cursor()
                 
-                if sqlite_types:
-                    placeholders = ",".join("?" * len(sqlite_types))
-                    query += f" AND type IN ({placeholders})"
-                    params.extend(sqlite_types)
-            
-            query += " ORDER BY name"
-            
-            if params:
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
-            
-            results = cursor.fetchall()
-            cursor.close()
-            
-            # Convert to expected format
-            catalog_name = catalog or "main"
-            schema_name = ""  # SQLite doesn't have schemas
-            
-            catalog_names = []
-            schema_names = []
-            table_names = []
-            table_types_list = []
-            
-            for row in results:
-                table_name = row[0]
-                table_type = "BASE TABLE" if row[1] == "table" else "VIEW"
-                catalog_names.append(catalog_name)
-                schema_names.append(schema_name)
-                table_names.append(table_name)
-                table_types_list.append(table_type)
-            
-            return pa.table({
-                "catalog_name": catalog_names,
-                "db_schema_name": schema_names,
-                "table_name": table_names,
-                "table_type": table_types_list
-            })
-            
-        except Exception as e:
-            logger.error(f"Could not get tables: {e}")
-            return pa.table({
-                "catalog_name": [],
-                "db_schema_name": [],
-                "table_name": [],
-                "table_type": []
-            })
+                # Get all tables and views
+                query = """
+                SELECT name, type FROM sqlite_master 
+                WHERE type IN ('table', 'view')
+                """
+                
+                params = []
+                
+                if table_name_filter_pattern:
+                    query += " AND name LIKE ?"
+                    params.append(table_name_filter_pattern)
+                
+                if table_types:
+                    # Convert to SQLite types
+                    sqlite_types = []
+                    for t in table_types:
+                        if t.upper() in ["BASE TABLE", "TABLE"]:
+                            sqlite_types.append("table")
+                        elif t.upper() == "VIEW":
+                            sqlite_types.append("view")
+                    
+                    if sqlite_types:
+                        placeholders = ",".join("?" * len(sqlite_types))
+                        query += f" AND type IN ({placeholders})"
+                        params.extend(sqlite_types)
+                
+                query += " ORDER BY name"
+                
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                
+                results = cursor.fetchall()
+                cursor.close()
+                
+                # Convert to expected format
+                catalog_name = catalog or "main"
+                schema_name = ""  # SQLite doesn't have schemas
+                
+                catalog_names = []
+                schema_names = []
+                table_names = []
+                table_types_list = []
+                
+                for row in results:
+                    table_name = row[0]
+                    table_type = "BASE TABLE" if row[1] == "table" else "VIEW"
+                    catalog_names.append(catalog_name)
+                    schema_names.append(schema_name)
+                    table_names.append(table_name)
+                    table_types_list.append(table_type)
+                
+                return pa.table({
+                    "catalog_name": catalog_names,
+                    "db_schema_name": schema_names,
+                    "table_name": table_names,
+                    "table_type": table_types_list
+                })
+                
+            except Exception as e:
+                logger.error(f"Could not get tables: {e}")
+                return pa.table({
+                    "catalog_name": [],
+                    "db_schema_name": [],
+                    "table_name": [],
+                    "table_type": []
+                })
 
     def get_sql_info(self, info_codes: List[int]) -> pa.Table:
         """Get SQL info for the given info codes as an Arrow table."""
@@ -310,63 +320,64 @@ class SQLiteBackend(DatabaseBackend):
         column_name_filter_pattern: Optional[str] = None,
     ) -> pa.Table:
         """Get columns for tables as an Arrow table."""
-        try:
-            cursor = self.connection.cursor()
-            
-            # Get all tables first
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = cursor.fetchall()
-            
-            catalog_names = []
-            schema_names = []
-            table_names = []
-            column_names = []
-            data_types = []
-            
-            for table_row in tables:
-                table_name = table_row[0]
+        with self._lock:  # Ensure thread-safe access
+            try:
+                cursor = self.connection.cursor()
                 
-                # Filter tables if pattern provided
-                if table_name_filter_pattern and table_name_filter_pattern not in table_name:
-                    continue
+                # Get all tables first
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = cursor.fetchall()
                 
-                # Get column info for this table
-                cursor.execute(f"PRAGMA table_info({table_name})")
-                columns = cursor.fetchall()
+                catalog_names = []
+                schema_names = []
+                table_names = []
+                column_names = []
+                data_types = []
                 
-                for col in columns:
-                    column_name = col[1]
-                    column_type = col[2] or "TEXT"
+                for table_row in tables:
+                    table_name = table_row[0]
                     
-                    # Filter columns if pattern provided
-                    if column_name_filter_pattern and column_name_filter_pattern not in column_name:
+                    # Filter tables if pattern provided
+                    if table_name_filter_pattern and table_name_filter_pattern not in table_name:
                         continue
                     
-                    catalog_names.append(catalog or "main")
-                    schema_names.append("")
-                    table_names.append(table_name)
-                    column_names.append(column_name)
-                    data_types.append(column_type)
-            
-            cursor.close()
-            
-            return pa.table({
-                "catalog_name": catalog_names,
-                "db_schema_name": schema_names,
-                "table_name": table_names,
-                "column_name": column_names,
-                "data_type": data_types
-            })
-            
-        except Exception as e:
-            logger.error(f"Could not get columns: {e}")
-            return pa.table({
-                "catalog_name": [],
-                "db_schema_name": [],
-                "table_name": [],
-                "column_name": [],
-                "data_type": []
-            })
+                    # Get column info for this table
+                    cursor.execute(f"PRAGMA table_info({table_name})")
+                    columns = cursor.fetchall()
+                    
+                    for col in columns:
+                        column_name = col[1]
+                        column_type = col[2] or "TEXT"
+                        
+                        # Filter columns if pattern provided
+                        if column_name_filter_pattern and column_name_filter_pattern not in column_name:
+                            continue
+                        
+                        catalog_names.append(catalog or "main")
+                        schema_names.append("")
+                        table_names.append(table_name)
+                        column_names.append(column_name)
+                        data_types.append(column_type)
+                
+                cursor.close()
+                
+                return pa.table({
+                    "catalog_name": catalog_names,
+                    "db_schema_name": schema_names,
+                    "table_name": table_names,
+                    "column_name": column_names,
+                    "data_type": data_types
+                })
+                
+            except Exception as e:
+                logger.error(f"Could not get columns: {e}")
+                return pa.table({
+                    "catalog_name": [],
+                    "db_schema_name": [],
+                    "table_name": [],
+                    "column_name": [],
+                    "data_type": []
+                })
 
     def get_catalogs_old(self) -> List[str]:
         """Get available catalogs (deprecated method for backward compatibility)."""
