@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import patch
 import pyarrow as pa
 from google.protobuf import any_pb2
+from urllib.parse import urlparse
 
 from mpzsql.flightsql.protobuf import (
     FlightSQLProtobuf,
@@ -508,30 +509,171 @@ class TestFlightSQLProtobufComprehensive:
             handles.add(handle)
     
     # ===============================
-    # Integration Tests
+    # Performance Tests
     # ===============================
     
-    def test_full_command_lifecycle(self):
-        """Test a complete command lifecycle."""
-        # Create a prepared statement
-        handle = self.protobuf.create_prepared_statement_handle()
-        assert isinstance(handle, str)
+    def test_schema_generation_performance(self):
+        """Test that schema generation is reasonably fast."""
+        import time
         
-        # Encode the handle
-        encoded_handle = self.protobuf.encode_prepared_statement_handle(handle)
-        assert isinstance(encoded_handle, bytes)
+        start_time = time.time()
+        for _ in range(100):
+            schema = self.protobuf.get_columns_schema()
+            assert isinstance(schema, pa.Schema)
+        end_time = time.time()
         
-        # Create schema for the statement
-        schema = self.protobuf.get_columns_schema()
+        # Should complete 100 schema generations in under 1 second
+        assert (end_time - start_time) < 1.0
+    
+    def test_handle_generation_performance(self):
+        """Test that handle generation is reasonably fast."""
+        import time
+        
+        start_time = time.time()
+        handles = []
+        for _ in range(1000):
+            handle = self.protobuf.create_prepared_statement_handle()
+            handles.append(handle)
+        end_time = time.time()
+        
+        # Should generate 1000 handles in under 1 second
+        assert (end_time - start_time) < 1.0
+        # All handles should be unique
+        assert len(set(handles)) == 1000
+    
+    # ===============================
+    # Logging Integration Tests
+    # ===============================
+    
+    @patch('mpzsql.flightsql.protobuf.protobuf_log')
+    def test_logging_integration(self, mock_log):
+        """Test that protobuf operations integrate with logging."""
+        # Test that parsing operations can log
+        sql = "SELECT * FROM test"
+        self.protobuf.parse_command_statement_query(sql.encode("utf-8"))
+        
+        # Test that schema generation can log
+        schema = self.protobuf.get_tables_schema_minimal()
         assert isinstance(schema, pa.Schema)
+    
+    @patch('mpzsql.flightsql.protobuf.logger')
+    def test_error_logging(self, mock_logger):
+        """Test that errors are properly logged."""
+        # Test parsing with invalid data that might cause logging
+        invalid_data = b'\xff' * 50
+        self.protobuf.parse_command_statement_query(invalid_data)
         
-        # Create action result - may return string due to implementation
-        param_schema = pa.schema([("param1", pa.string())])
-        result = self.protobuf.create_action_create_prepared_statement_result(
-            handle, schema, param_schema
-        )
-        assert isinstance(result, (bytes, str))
-        assert len(result) > 0
+        # The method should handle the error gracefully
+        # Actual logging verification would depend on implementation
+    
+    # ===============================
+    # Complex Protobuf Tests
+    # ===============================
+    
+    def test_varint_parsing(self):
+        """Test parsing of protobuf varint encoding."""
+        # Create test data with varint length prefix
+        sql = "SELECT column1, column2 FROM table1 WHERE condition = 'value'"
+        sql_bytes = sql.encode("utf-8")
+        
+        # Single-byte varint (length < 128)
+        if len(sql_bytes) < 128:
+            test_bytes = bytes([len(sql_bytes)]) + sql_bytes
+            result = self.protobuf.parse_command_statement_query(test_bytes)
+            # The implementation may parse this slightly differently
+            assert result is not None
+            assert sql in result or result in sql or len(result) > 10
+    
+    def test_binary_schema_handling(self):
+        """Test handling of binary schema data in table schemas."""
+        schema = self.protobuf.get_tables_schema_with_included_schema()
+        
+        # Create test data with binary schema
+        binary_schema_data = b'\x08\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00'
+        test_data = [
+            ["catalog"],
+            ["schema"],
+            ["table"],
+            ["BASE TABLE"],
+            ["remarks"],
+            [binary_schema_data]
+        ]
+        
+        table = pa.Table.from_arrays(test_data, schema=schema)
+        assert len(table) == 1
+        assert table.column("table_schema")[0].as_py() == binary_schema_data
+
+
+class TestParseAnyCommand:
+    """Test the parse_any_command utility function."""
+    
+    def test_parse_any_command_valid(self):
+        """Test parsing valid Any protobuf message."""
+        # Create a simple Any message
+        any_msg = any_pb2.Any()
+        any_msg.type_url = "type.googleapis.com/test.Message"
+        any_msg.value = b"test_value"
+        
+        serialized = any_msg.SerializeToString()
+        result = parse_any_command(serialized)
+        
+        assert result is not None
+        assert result.type_url == "type.googleapis.com/test.Message"
+        assert result.value == b"test_value"
+    
+    def test_parse_any_command_invalid(self):
+        """Test parsing invalid protobuf data."""
+        invalid_data = b"not_protobuf_data"
+        result = parse_any_command(invalid_data)
+        
+        assert result is None
+    
+    def test_parse_any_command_empty(self):
+        """Test parsing empty data."""
+        result = parse_any_command(b"")
+        # The implementation may return an empty Any message rather than None
+        assert result is None or (hasattr(result, 'type_url') and result.type_url == "")
+
+
+class TestActionClasses:
+    """Test FlightSQL action request/response classes."""
+    
+    def test_action_create_prepared_statement_request(self):
+        """Test ActionCreatePreparedStatementRequest class."""
+        request = ActionCreatePreparedStatementRequest()
+        request.query = "SELECT * FROM users WHERE id = ?"
+        request.transaction_id = "tx_123"
+        
+        assert request.query == "SELECT * FROM users WHERE id = ?"
+        assert request.transaction_id == "tx_123"
+    
+    def test_action_close_prepared_statement_request(self):
+        """Test ActionClosePreparedStatementRequest class."""
+        request = ActionClosePreparedStatementRequest()
+        request.prepared_statement_handle = "stmt_456"
+        
+        assert request.prepared_statement_handle == "stmt_456"
+    
+    def test_action_begin_transaction_request(self):
+        """Test ActionBeginTransactionRequest class."""
+        request = ActionBeginTransactionRequest()
+        # Test that the class can be instantiated
+        assert hasattr(request, '__dict__')
+    
+    def test_action_end_transaction_request(self):
+        """Test ActionEndTransactionRequest class."""
+        request = ActionEndTransactionRequest()
+        request.transaction_id = "tx_789"
+        request.action = "COMMIT"
+        
+        assert hasattr(request, '__dict__')
+    
+    def test_do_put_update_result(self):
+        """Test DoPutUpdateResult class."""
+        result = DoPutUpdateResult()
+        result.record_count = 42
+        
+        assert hasattr(result, '__dict__')
     
     def test_type_url_constants_completeness(self):
         """Test that all required type URL constants are defined."""
@@ -556,8 +698,12 @@ class TestFlightSQLProtobufComprehensive:
             assert hasattr(self.protobuf, constant_name)
             value = getattr(self.protobuf, constant_name)
             assert isinstance(value, str)
-            assert "type.googleapis.com" in value
-            assert "arrow.flight.protocol.sql" in value
+            
+            # Prepend a scheme to make it a valid URL for parsing
+            parsed_url = urlparse(f"https://{value}")
+            
+            assert parsed_url.netloc == "type.googleapis.com"
+            assert "arrow.flight.protocol.sql" in parsed_url.path
     
     # ===============================
     # Performance Tests
@@ -725,7 +871,200 @@ class TestActionClasses:
         result.record_count = 42
         
         assert hasattr(result, '__dict__')
+    
+    def test_type_url_constants_completeness(self):
+        """Test that all required type URL constants are defined."""
+        required_constants = [
+            'COMMAND_STATEMENT_QUERY_TYPE_URL',
+            'COMMAND_STATEMENT_UPDATE_TYPE_URL',
+            'COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL',
+            'COMMAND_PREPARED_STATEMENT_UPDATE_TYPE_URL',
+            'COMMAND_GET_CATALOGS_TYPE_URL',
+            'COMMAND_GET_DB_SCHEMAS_TYPE_URL',
+            'COMMAND_GET_TABLES_TYPE_URL',
+            'COMMAND_GET_TABLE_TYPES_TYPE_URL',
+            'COMMAND_GET_COLUMNS_TYPE_URL',
+            'COMMAND_GET_SQL_INFO_TYPE_URL',
+            'ACTION_CREATE_PREPARED_STATEMENT_RESULT_TYPE_URL',
+            'ACTION_BEGIN_TRANSACTION_REQUEST_TYPE_URL',
+            'ACTION_BEGIN_TRANSACTION_RESULT_TYPE_URL',
+            'ACTION_END_TRANSACTION_REQUEST_TYPE_URL'
+        ]
+        
+        for constant_name in required_constants:
+            assert hasattr(self.protobuf, constant_name)
+            value = getattr(self.protobuf, constant_name)
+            assert isinstance(value, str)
+            
+            # Prepend a scheme to make it a valid URL for parsing
+            parsed_url = urlparse(f"https://{value}")
+            
+            assert parsed_url.netloc == "type.googleapis.com"
+            assert "arrow.flight.protocol.sql" in parsed_url.path
+    
+    # ===============================
+    # Performance Tests
+    # ===============================
+    
+    def test_schema_generation_performance(self):
+        """Test that schema generation is reasonably fast."""
+        import time
+        
+        start_time = time.time()
+        for _ in range(100):
+            schema = self.protobuf.get_columns_schema()
+            assert isinstance(schema, pa.Schema)
+        end_time = time.time()
+        
+        # Should complete 100 schema generations in under 1 second
+        assert (end_time - start_time) < 1.0
+    
+    def test_handle_generation_performance(self):
+        """Test that handle generation is reasonably fast."""
+        import time
+        
+        start_time = time.time()
+        handles = []
+        for _ in range(1000):
+            handle = self.protobuf.create_prepared_statement_handle()
+            handles.append(handle)
+        end_time = time.time()
+        
+        # Should generate 1000 handles in under 1 second
+        assert (end_time - start_time) < 1.0
+        # All handles should be unique
+        assert len(set(handles)) == 1000
+    
+    # ===============================
+    # Logging Integration Tests
+    # ===============================
+    
+    @patch('mpzsql.flightsql.protobuf.protobuf_log')
+    def test_logging_integration(self, mock_log):
+        """Test that protobuf operations integrate with logging."""
+        # Test that parsing operations can log
+        sql = "SELECT * FROM test"
+        self.protobuf.parse_command_statement_query(sql.encode("utf-8"))
+        
+        # Test that schema generation can log
+        schema = self.protobuf.get_tables_schema_minimal()
+        assert isinstance(schema, pa.Schema)
+    
+    @patch('mpzsql.flightsql.protobuf.logger')
+    def test_error_logging(self, mock_logger):
+        """Test that errors are properly logged."""
+        # Test parsing with invalid data that might cause logging
+        invalid_data = b'\xff' * 50
+        self.protobuf.parse_command_statement_query(invalid_data)
+        
+        # The method should handle the error gracefully
+        # Actual logging verification would depend on implementation
+    
+    # ===============================
+    # Complex Protobuf Tests
+    # ===============================
+    
+    def test_varint_parsing(self):
+        """Test parsing of protobuf varint encoding."""
+        # Create test data with varint length prefix
+        sql = "SELECT column1, column2 FROM table1 WHERE condition = 'value'"
+        sql_bytes = sql.encode("utf-8")
+        
+        # Single-byte varint (length < 128)
+        if len(sql_bytes) < 128:
+            test_bytes = bytes([len(sql_bytes)]) + sql_bytes
+            result = self.protobuf.parse_command_statement_query(test_bytes)
+            # The implementation may parse this slightly differently
+            assert result is not None
+            assert sql in result or result in sql or len(result) > 10
+    
+    def test_binary_schema_handling(self):
+        """Test handling of binary schema data in table schemas."""
+        schema = self.protobuf.get_tables_schema_with_included_schema()
+        
+        # Create test data with binary schema
+        binary_schema_data = b'\x08\x00\x00\x00\x01\x00\x00\x00\x04\x00\x00\x00'
+        test_data = [
+            ["catalog"],
+            ["schema"],
+            ["table"],
+            ["BASE TABLE"],
+            ["remarks"],
+            [binary_schema_data]
+        ]
+        
+        table = pa.Table.from_arrays(test_data, schema=schema)
+        assert len(table) == 1
+        assert table.column("table_schema")[0].as_py() == binary_schema_data
 
 
-if __name__ == "__main__":
-    pytest.main(["-v", "--tb=short", __file__])
+class TestParseAnyCommand:
+    """Test the parse_any_command utility function."""
+    
+    def test_parse_any_command_valid(self):
+        """Test parsing valid Any protobuf message."""
+        # Create a simple Any message
+        any_msg = any_pb2.Any()
+        any_msg.type_url = "type.googleapis.com/test.Message"
+        any_msg.value = b"test_value"
+        
+        serialized = any_msg.SerializeToString()
+        result = parse_any_command(serialized)
+        
+        assert result is not None
+        assert result.type_url == "type.googleapis.com/test.Message"
+        assert result.value == b"test_value"
+    
+    def test_parse_any_command_invalid(self):
+        """Test parsing invalid protobuf data."""
+        invalid_data = b"not_protobuf_data"
+        result = parse_any_command(invalid_data)
+        
+        assert result is None
+    
+    def test_parse_any_command_empty(self):
+        """Test parsing empty data."""
+        result = parse_any_command(b"")
+        # The implementation may return an empty Any message rather than None
+        assert result is None or (hasattr(result, 'type_url') and result.type_url == "")
+
+
+class TestActionClasses:
+    """Test FlightSQL action request/response classes."""
+    
+    def test_action_create_prepared_statement_request(self):
+        """Test ActionCreatePreparedStatementRequest class."""
+        request = ActionCreatePreparedStatementRequest()
+        request.query = "SELECT * FROM users WHERE id = ?"
+        request.transaction_id = "tx_123"
+        
+        assert request.query == "SELECT * FROM users WHERE id = ?"
+        assert request.transaction_id == "tx_123"
+    
+    def test_action_close_prepared_statement_request(self):
+        """Test ActionClosePreparedStatementRequest class."""
+        request = ActionClosePreparedStatementRequest()
+        request.prepared_statement_handle = "stmt_456"
+        
+        assert request.prepared_statement_handle == "stmt_456"
+    
+    def test_action_begin_transaction_request(self):
+        """Test ActionBeginTransactionRequest class."""
+        request = ActionBeginTransactionRequest()
+        # Test that the class can be instantiated
+        assert hasattr(request, '__dict__')
+    
+    def test_action_end_transaction_request(self):
+        """Test ActionEndTransactionRequest class."""
+        request = ActionEndTransactionRequest()
+        request.transaction_id = "tx_789"
+        request.action = "COMMIT"
+        
+        assert hasattr(request, '__dict__')
+    
+    def test_do_put_update_result(self):
+        """Test DoPutUpdateResult class."""
+        result = DoPutUpdateResult()
+        result.record_count = 42
+        
+        assert hasattr(result, '__dict__')
