@@ -126,6 +126,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             url_value = getattr(self.protobuf, url_constant)
             assert isinstance(url_value, str)
             parsed_url = urlparse(url_value)
+            assert parsed_url.hostname is not None, f"Malformed URL: {url_value}"
             assert parsed_url.hostname == "type.googleapis.com"
 
     def test_action_type_urls_constants(self):
