@@ -221,7 +221,7 @@ After successful generation, the following files are created in `../../../certs/
 Start the MPZSQL server with the generated certificate:
 
 ```bash
-python3 -m mpzsql.cli \
+uv run mpzsql-server \
   --tls-cert ../../../certs/letsencrypt-fullchain.pem \
   --tls-key ../../../certs/letsencrypt-server.key \
   --username admin \
