@@ -220,4 +220,7 @@ test_postgresql_config.sh
 test_certs/
 *test*certs*/
 
+# Let's Encrypt certificates (sensitive files)
+certs/letsencrypt*.*
+
 .DS_Store
