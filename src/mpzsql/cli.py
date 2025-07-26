@@ -378,6 +378,11 @@ def main(
 ) -> None:
     """Start the MPZSQL Apache Arrow FlightSQL server."""
 
+    # Handle version request first, before any initialization
+    if version:
+        console.print(f"MPZSQL Server version {__version__}")
+        raise typer.Exit()
+
     # Initialize logfire
     LogfireManager.initialize()
     logger = get_main_logger()
@@ -394,11 +399,6 @@ def main(
     logging.getLogger().addHandler(logging.StreamHandler())
 
     logger.info("MPZSQL Server starting", version=__version__)
-
-
-    if version:
-        console.print(f"MPZSQL Server version {__version__}")
-        raise typer.Exit()
 
     # Validate TLS configuration
     tls_cert, tls_key = validate_tls_files(tls_cert, tls_key)

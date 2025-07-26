@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mpzsql-server = "mpzsql.cli:main"
+mpzsql-server = "mpzsql.cli:app"
 
 [project.optional-dependencies]
 dev = [
