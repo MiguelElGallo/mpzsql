@@ -1,6 +1,6 @@
 #!/bin/bash
 # Comprehensive test script for MPZSQL server with TLS and authentication
-# This script tests the complete flow: certificate generation, server startup, and client connection
+# This script tests the complete flow: server startup and client connection
 
 set -e
 
@@ -13,12 +13,73 @@ TEST_HOST="localhost"
 TEST_PORT="8081"  # Use different port to avoid conflicts
 TEST_USERNAME="testuser"
 TEST_PASSWORD="testpass123"
-CERT_DIR="../../../test_certs"
-CERT_FILE="$CERT_DIR/server.crt"
-KEY_FILE="$CERT_DIR/server.key"
-# Paths for server command (from project root)
-SERVER_CERT_FILE="test_certs/server.crt"
-SERVER_KEY_FILE="test_certs/server.key"
+PROJECT_ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
+CERT_DIR="$PROJECT_ROOT/certs"
+
+# Certificate file paths - support both local and CI environments
+if [[ -n "$GITHUB_ACTIONS" ]]; then
+    # In GitHub Actions, use secrets to create temporary certificate files
+    echo "🔧 GitHub Actions environment detected - setting up certificates from secrets..."
+    
+    # Create temporary certificate files from GitHub secrets
+    CERT_FILE="$CERT_DIR/ci-server.crt"
+    KEY_FILE="$CERT_DIR/ci-server.key"
+    
+    # Create cert directory if it doesn't exist
+    mkdir -p "$CERT_DIR"
+    
+    # Write certificate and key from environment variables (set by GitHub Actions)
+    if [[ -n "$TLS_CERTIFICATE" ]] && [[ -n "$TLS_PRIVATE_KEY" ]]; then
+        echo "$TLS_CERTIFICATE" > "$CERT_FILE"
+        echo "$TLS_PRIVATE_KEY" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"  # Secure the private key
+        echo "✅ Temporary certificates created from GitHub secrets"
+        
+        # Display certificate info
+        echo "📋 Certificate Information:"
+        echo "   🏢 Issuer: $(openssl x509 -in "$CERT_FILE" -noout -issuer | sed 's/issuer=//')"
+        echo "   🌐 Subject: $(openssl x509 -in "$CERT_FILE" -noout -subject | sed 's/subject=//')"
+        echo "   📅 Valid until: $(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)"
+        echo ""
+    else
+        echo "❌ Error: TLS_CERTIFICATE or TLS_PRIVATE_KEY environment variables not set"
+        exit 1
+    fi
+    
+    # Paths for server command (relative to project root)
+    SERVER_CERT_FILE="certs/ci-server.crt"
+    SERVER_KEY_FILE="certs/ci-server.key"
+else
+    # Local environment - use existing Let's Encrypt certificates
+    echo "🏠 Local environment detected - using Let's Encrypt certificates..."
+    CERT_FILE="$CERT_DIR/letsencrypt-server.crt"
+    KEY_FILE="$CERT_DIR/letsencrypt-server.key"
+    
+    # Check if certificates exist
+    if [[ ! -f "$CERT_FILE" ]] || [[ ! -f "$KEY_FILE" ]]; then
+        echo "❌ Error: Let's Encrypt certificates not found in $CERT_DIR"
+        echo "   Expected files:"
+        echo "   - $CERT_FILE"
+        echo "   - $KEY_FILE"
+        echo ""
+        echo "💡 Please run the certificate generation script first:"
+        echo "   cd src/demo_client/scripts"
+        echo "   ./generate_cert2.sh -d quientienemail.com -e admin@quientienemail.com -p manual"
+        exit 1
+    fi
+    
+    # Display certificate info
+    echo "📋 Let's Encrypt Certificate Information:"
+    echo "   🏢 Issuer: $(openssl x509 -in "$CERT_FILE" -noout -issuer | sed 's/issuer=//')"
+    echo "   🌐 Subject: $(openssl x509 -in "$CERT_FILE" -noout -subject | sed 's/subject=//')"
+    echo "   📅 Valid until: $(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)"
+    echo ""
+    
+    # Paths for server command (relative to project root)
+    SERVER_CERT_FILE="certs/letsencrypt-server.crt"
+    SERVER_KEY_FILE="certs/letsencrypt-server.key"
+fi
+
 SERVER_PID=""
 
 # Cleanup function
@@ -33,10 +94,10 @@ cleanup() {
         wait "$SERVER_PID" 2>/dev/null || true
     fi
     
-    # Remove test certificates
-    if [[ -d "$CERT_DIR" ]]; then
-        echo "   Removing test certificates..."
-        rm -rf "$CERT_DIR"
+    # Clean up temporary certificate files in CI
+    if [[ -n "$GITHUB_ACTIONS" ]]; then
+        echo "   Removing temporary certificate files..."
+        rm -f "$CERT_DIR/ci-server.crt" "$CERT_DIR/ci-server.key"
     fi
     
     echo "✅ Cleanup complete"
@@ -45,60 +106,11 @@ cleanup() {
 # Set up cleanup on exit
 trap cleanup EXIT
 
-echo "🔧 Step 1: Generating test certificates..."
-echo "========================================="
-
-# Create test certificates directory
-mkdir -p "$CERT_DIR"
-
-# Create OpenSSL configuration
-CONFIG_FILE="$CERT_DIR/openssl.conf"
-cat > "$CONFIG_FILE" << EOF
-[req]
-default_bits = 2048
-prompt = no
-default_md = sha256
-distinguished_name = dn
-req_extensions = v3_req
-
-[dn]
-C=US
-ST=Test State
-L=Test City
-O=MPZSQL Test
-OU=Test Unit
-CN=$TEST_HOST
-
-[v3_req]
-basicConstraints = CA:FALSE
-keyUsage = nonRepudiation, digitalSignature, keyEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = $TEST_HOST
-DNS.2 = localhost
-DNS.3 = 127.0.0.1
-IP.1 = 127.0.0.1
-IP.2 = ::1
-EOF
-
-# Generate certificate
-openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" -out "$CERT_FILE" \
-    -days 1 -nodes -config "$CONFIG_FILE" -extensions v3_req 2>/dev/null
-
-chmod 600 "$KEY_FILE"
-chmod 644 "$CERT_FILE"
-
-echo "✅ Test certificates generated"
-echo "   Certificate: $CERT_FILE"
-echo "   Private Key: $KEY_FILE"
-echo ""
-
-echo "🚀 Step 2: Starting MPZSQL server with TLS and authentication..."
+echo "🚀 Step 1: Starting MPZSQL server with TLS and authentication..."
 echo "=============================================================="
 
-# Build server command
-SERVER_CMD="python3 -m mpzsql.cli"
+# Build server command (without --test-mode as it doesn't exist)
+SERVER_CMD="uv run mpzsql-server"
 SERVER_CMD="$SERVER_CMD --hostname $TEST_HOST"
 SERVER_CMD="$SERVER_CMD --port $TEST_PORT"
 SERVER_CMD="$SERVER_CMD --username $TEST_USERNAME"
@@ -112,7 +124,7 @@ echo "   Host: $TEST_HOST"
 echo "   Port: $TEST_PORT"
 echo "   Username: $TEST_USERNAME"
 echo "   Password: $TEST_PASSWORD"
-echo "   TLS Certificate: $CERT_FILE"
+echo "   TLS Certificate: $SERVER_CERT_FILE"
 echo ""
 
 # Start server in background
@@ -125,13 +137,14 @@ if lsof -i :$TEST_PORT >/dev/null 2>&1; then
     sleep 2
 fi
 
-# Change to project root and use PYTHONPATH for server startup
-LOG_PATH="$(pwd)/server_test.log"
-(cd ../../../ && PYTHONPATH=src $SERVER_CMD > "$LOG_PATH" 2>&1) &
+# Change to project root for server startup
+LOG_PATH="$PROJECT_ROOT/server_test.log"
+# Temporarily unset Logfire token to avoid authentication issues during testing
+(cd "$PROJECT_ROOT" && unset LOGFIRE_WRITE_TOKEN && $SERVER_CMD > "$LOG_PATH" 2>&1) &
 SERVER_PID=$!
 
 echo "✅ Server started (PID: $SERVER_PID)"
-echo "   Log file: server_test.log"
+echo "   Log file: $LOG_PATH"
 echo ""
 
 # Wait for server to start
@@ -144,23 +157,26 @@ if kill -0 "$SERVER_PID" 2>/dev/null; then
 else
     echo "❌ Server failed to start. Log output:"
     echo "----------------------------------------"
-    if [ -f server_test.log ]; then
-        tail -20 server_test.log
+    if [ -f "$LOG_PATH" ]; then
+        tail -20 "$LOG_PATH"
     else
-        echo "Log file not found at: $(pwd)/server_test.log"
+        echo "Log file not found at: $LOG_PATH"
     fi
     exit 1
 fi
 echo ""
 
-echo "🔗 Step 3: Testing client connections..."
+echo "🔗 Step 2: Testing client connections..."
 echo "======================================="
+
+# Change to client directory
+cd "$PROJECT_ROOT/src/demo_client"
 
 # Test 1: Connection test
 echo "🧪 Test 1: Basic connection test"
 echo "---------------------------------"
 
-CLIENT_CMD="python3 ./client.py test-connection"
+CLIENT_CMD="uv run python3 client.py test-connection"
 CLIENT_CMD="$CLIENT_CMD --host $TEST_HOST --port $TEST_PORT"
 CLIENT_CMD="$CLIENT_CMD --user $TEST_USERNAME --password $TEST_PASSWORD"
 CLIENT_CMD="$CLIENT_CMD --cert $CERT_FILE"
@@ -177,7 +193,7 @@ echo ""
 echo "🧪 Test 2: Simple query execution"
 echo "----------------------------------"
 
-QUERY_CMD="python3 ./client.py query"
+QUERY_CMD="uv run python3 client.py query"
 QUERY_CMD="$QUERY_CMD --host $TEST_HOST --port $TEST_PORT"
 QUERY_CMD="$QUERY_CMD --user $TEST_USERNAME --password $TEST_PASSWORD"
 QUERY_CMD="$QUERY_CMD --cert $CERT_FILE"
@@ -195,11 +211,11 @@ echo "🧪 Test 3: Data creation and query"
 echo "-----------------------------------"
 
 # Create test table (DDL operation)
-if python3 ./client.py execute \
+if uv run python3 client.py execute \
     --host "$TEST_HOST" --port "$TEST_PORT" \
     --user "$TEST_USERNAME" --password "$TEST_PASSWORD" \
     --cert "$CERT_FILE" \
-    "CREATE TABLE test_data (id INTEGER, name VARCHAR)"; then
+    "CREATE OR REPLACE TABLE test_data (id INTEGER, name VARCHAR)"; then
     echo "✅ Table creation successful"
 else
     echo "❌ Table creation failed"
@@ -207,7 +223,7 @@ else
 fi
 
 # Insert test data (DML operation)
-if python3 ./client.py execute \
+if uv run python3 client.py execute \
     --host "$TEST_HOST" --port "$TEST_PORT" \
     --user "$TEST_USERNAME" --password "$TEST_PASSWORD" \
     --cert "$CERT_FILE" \
@@ -231,7 +247,7 @@ echo ""
 echo "🧪 Test 4: Authentication failure test"
 echo "---------------------------------------"
 
-FAIL_CMD="python3 ./client.py query \"SELECT 1 as auth_test\""
+FAIL_CMD="uv run python3 client.py query \"SELECT 1 as auth_test\""
 FAIL_CMD="$FAIL_CMD --host $TEST_HOST --port $TEST_PORT"
 FAIL_CMD="$FAIL_CMD --user wronguser --password wrongpass"
 FAIL_CMD="$FAIL_CMD --cert $CERT_FILE"
@@ -249,7 +265,7 @@ echo ""
 echo "🧪 Test 5: TLS requirement test"
 echo "--------------------------------"
 
-NOTLS_CMD="python3 ./client.py test-connection"
+NOTLS_CMD="uv run python3 client.py test-connection"
 NOTLS_CMD="$NOTLS_CMD --host $TEST_HOST --port $TEST_PORT"
 NOTLS_CMD="$NOTLS_CMD --user $TEST_USERNAME --password $TEST_PASSWORD"
 # Note: not providing --cert means plain connection
@@ -265,7 +281,6 @@ echo "🎉 All tests completed successfully!"
 echo "===================================="
 echo ""
 echo "📊 Summary:"
-echo "   ✅ Certificate generation"
 echo "   ✅ Server startup with TLS and authentication"
 echo "   ✅ Client connection test"
 echo "   ✅ Query execution"
@@ -273,10 +288,10 @@ echo "   ✅ Authentication validation"
 echo ""
 echo "🔧 Manual testing commands:"
 echo "   # Test connection:"
-echo "   python3 ./client.py test-connection --cert $CERT_FILE --user $TEST_USERNAME --password $TEST_PASSWORD --host $TEST_HOST --port $TEST_PORT"
+echo "   uv run python3 client.py test-connection --cert $CERT_FILE --user $TEST_USERNAME --password $TEST_PASSWORD --host $TEST_HOST --port $TEST_PORT"
 echo ""
 echo "   # Interactive mode:"
-echo "   python3 ./client.py connect --cert $CERT_FILE --user $TEST_USERNAME --password $TEST_PASSWORD --host $TEST_HOST --port $TEST_PORT"
+echo "   uv run python3 client.py connect --cert $CERT_FILE --user $TEST_USERNAME --password $TEST_PASSWORD --host $TEST_HOST --port $TEST_PORT"
 echo ""
 echo "   # Execute query:"
-echo "   python3 ./client.py query \"SELECT * FROM test_data\" --cert $CERT_FILE --user $TEST_USERNAME --password $TEST_PASSWORD --host $TEST_HOST --port $TEST_PORT"
+echo "   uv run python3 client.py query \"SELECT * FROM test_data\" --cert $CERT_FILE --user $TEST_USERNAME --password $TEST_PASSWORD --host $TEST_HOST --port $TEST_PORT"
