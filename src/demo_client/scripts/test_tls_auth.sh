@@ -15,11 +15,71 @@ TEST_USERNAME="testuser"
 TEST_PASSWORD="testpass123"
 PROJECT_ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 CERT_DIR="$PROJECT_ROOT/certs"
-CERT_FILE="$CERT_DIR/letsencrypt-server.crt"
-KEY_FILE="$CERT_DIR/letsencrypt-server.key"
-# Paths for server command (from project root)
-SERVER_CERT_FILE="certs/letsencrypt-server.crt"
-SERVER_KEY_FILE="certs/letsencrypt-server.key"
+
+# Certificate file paths - support both local and CI environments
+if [[ -n "$GITHUB_ACTIONS" ]]; then
+    # In GitHub Actions, use secrets to create temporary certificate files
+    echo "🔧 GitHub Actions environment detected - setting up certificates from secrets..."
+    
+    # Create temporary certificate files from GitHub secrets
+    CERT_FILE="$CERT_DIR/ci-server.crt"
+    KEY_FILE="$CERT_DIR/ci-server.key"
+    
+    # Create cert directory if it doesn't exist
+    mkdir -p "$CERT_DIR"
+    
+    # Write certificate and key from environment variables (set by GitHub Actions)
+    if [[ -n "$TLS_CERTIFICATE" ]] && [[ -n "$TLS_PRIVATE_KEY" ]]; then
+        echo "$TLS_CERTIFICATE" > "$CERT_FILE"
+        echo "$TLS_PRIVATE_KEY" > "$KEY_FILE"
+        chmod 600 "$KEY_FILE"  # Secure the private key
+        echo "✅ Temporary certificates created from GitHub secrets"
+        
+        # Display certificate info
+        echo "📋 Certificate Information:"
+        echo "   🏢 Issuer: $(openssl x509 -in "$CERT_FILE" -noout -issuer | sed 's/issuer=//')"
+        echo "   🌐 Subject: $(openssl x509 -in "$CERT_FILE" -noout -subject | sed 's/subject=//')"
+        echo "   📅 Valid until: $(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)"
+        echo ""
+    else
+        echo "❌ Error: TLS_CERTIFICATE or TLS_PRIVATE_KEY environment variables not set"
+        exit 1
+    fi
+    
+    # Paths for server command (relative to project root)
+    SERVER_CERT_FILE="certs/ci-server.crt"
+    SERVER_KEY_FILE="certs/ci-server.key"
+else
+    # Local environment - use existing Let's Encrypt certificates
+    echo "🏠 Local environment detected - using Let's Encrypt certificates..."
+    CERT_FILE="$CERT_DIR/letsencrypt-server.crt"
+    KEY_FILE="$CERT_DIR/letsencrypt-server.key"
+    
+    # Check if certificates exist
+    if [[ ! -f "$CERT_FILE" ]] || [[ ! -f "$KEY_FILE" ]]; then
+        echo "❌ Error: Let's Encrypt certificates not found in $CERT_DIR"
+        echo "   Expected files:"
+        echo "   - $CERT_FILE"
+        echo "   - $KEY_FILE"
+        echo ""
+        echo "💡 Please run the certificate generation script first:"
+        echo "   cd src/demo_client/scripts"
+        echo "   ./generate_cert2.sh -d quientienemail.com -e admin@quientienemail.com -p manual"
+        exit 1
+    fi
+    
+    # Display certificate info
+    echo "📋 Let's Encrypt Certificate Information:"
+    echo "   🏢 Issuer: $(openssl x509 -in "$CERT_FILE" -noout -issuer | sed 's/issuer=//')"
+    echo "   🌐 Subject: $(openssl x509 -in "$CERT_FILE" -noout -subject | sed 's/subject=//')"
+    echo "   📅 Valid until: $(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)"
+    echo ""
+    
+    # Paths for server command (relative to project root)
+    SERVER_CERT_FILE="certs/letsencrypt-server.crt"
+    SERVER_KEY_FILE="certs/letsencrypt-server.key"
+fi
+
 SERVER_PID=""
 
 # Cleanup function
@@ -32,6 +92,12 @@ cleanup() {
         echo "   Stopping server (PID: $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    
+    # Clean up temporary certificate files in CI
+    if [[ -n "$GITHUB_ACTIONS" ]]; then
+        echo "   Removing temporary certificate files..."
+        rm -f "$CERT_DIR/ci-server.crt" "$CERT_DIR/ci-server.key"
     fi
     
     echo "✅ Cleanup complete"

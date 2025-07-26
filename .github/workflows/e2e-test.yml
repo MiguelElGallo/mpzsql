@@ -29,10 +29,36 @@ jobs:
     - name: Install dependencies
       run: uv sync --all-extras --dev
     
+    - name: Install OpenSSL for certificate validation
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openssl
+    
+    - name: Display Certificate Information
+      env:
+        TLS_CERTIFICATE: ${{ secrets.TLS_CERTIFICATE }}
+      run: |
+        echo "📋 TLS Certificate Information"
+        echo "=============================="
+        echo "🏢 Certificate Issuer Information:"
+        echo "$TLS_CERTIFICATE" | openssl x509 -noout -issuer | sed 's/issuer=/   /'
+        echo "🌐 Certificate Subject:"
+        echo "$TLS_CERTIFICATE" | openssl x509 -noout -subject | sed 's/subject=/   /'
+        echo "📅 Certificate Validity:"
+        echo "   Valid From: $(echo "$TLS_CERTIFICATE" | openssl x509 -noout -startdate | cut -d= -f2)"
+        echo "   Valid Until: $(echo "$TLS_CERTIFICATE" | openssl x509 -noout -enddate | cut -d= -f2)"
+        echo "🔐 Certificate Details:"
+        echo "   Algorithm: $(echo "$TLS_CERTIFICATE" | openssl x509 -noout -text | grep "Signature Algorithm" | head -1 | sed 's/.*Signature Algorithm: /   /')"
+        echo "   Key Type: $(echo "$TLS_CERTIFICATE" | openssl x509 -noout -text | grep "Public Key Algorithm" | sed 's/.*Public Key Algorithm: /   /')"
+        echo ""
+    
     - name: Make test scripts executable
       run: chmod +x src/demo_client/scripts/*.sh
     
     - name: Run End-to-End TLS Authentication Test
+      env:
+        TLS_CERTIFICATE: ${{ secrets.TLS_CERTIFICATE }}
+        TLS_PRIVATE_KEY: ${{ secrets.TLS_PRIVATE_KEY }}
       run: |
         cd src/demo_client
         source ../../.venv/bin/activate
@@ -44,6 +70,7 @@ jobs:
       with:
         name: e2e-test-logs
         path: |
-          src/demo_client/server_test.log
+          server_test.log
           src/demo_client/*.log
+          *.log
         retention-days: 7
