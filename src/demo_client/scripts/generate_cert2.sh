@@ -317,7 +317,7 @@ show_certificate_info() {
     echo ""
     
     print_status "Usage with MPZSQL server:"
-    echo "   python3 -m mpzsql.cli --tls-cert $FULLCHAIN_FILE --tls-key $KEY_FILE --username admin --password secret"
+    echo "   uv run mpzsql-server --tls-cert $FULLCHAIN_FILE --tls-key $KEY_FILE --username admin --password secret"
     echo ""
     
     print_status "Usage with client:"
