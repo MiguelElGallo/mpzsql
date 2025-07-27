@@ -224,3 +224,5 @@ test_certs/
 certs/letsencrypt*.*
 
 .DS_Store
+dummy_tests/
+dummy_tests/*
