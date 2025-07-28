@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "STARTSERVER",
+      "type": "shell",
+      "command": "zsh",
+      "args": [
+        "-c",
+        "source ./test_postgresql_config.sh && source .venv/bin/activate && python -m mpzsql.cli --secret-key \"test-secret-key\" --postgresql-server \"$POSTGRESQL_SERVER\" --postgresql-port \"$POSTGRESQL_PORT\" --postgresql-user \"$POSTGRESQL_USER\" --postgresql-password \"$POSTGRESQL_PASSWORD\" --postgresql-catalogdb \"$POSTGRESQL_CATALOGDB\" --tls-cert \"$MPZSQL_TLS_CERT_PATH\" --tls-key \"$MPZSQL_TLS_KEY_PATH\" --hostname localhost --port 8080 --username \"$MPZSQL_USERNAME\" --password \"$MPZSQL_PASSWORD\" --print-queries"
+      ],
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    },
+    {
+      "label": "STARTSERVERDEBUG",
+      "type": "shell",
+      "command": "zsh",
+      "args": [
+        "-c",
+        "source ./test_postgresql_config.sh && source .venv/bin/activate && python -m debugpy --listen 5678 -m mpzsql.cli --secret-key \"test-secret-key\" --postgresql-server \"$POSTGRESQL_SERVER\" --postgresql-port \"$POSTGRESQL_PORT\" --postgresql-user \"$POSTGRESQL_USER\" --postgresql-password \"$POSTGRESQL_PASSWORD\" --postgresql-catalogdb \"$POSTGRESQL_CATALOGDB\" --tls-cert \"$MPZSQL_TLS_CERT_PATH\" --tls-key \"$MPZSQL_TLS_KEY_PATH\" --hostname localhost --port 8080 --username \"$MPZSQL_USERNAME\" --password \"$MPZSQL_PASSWORD\" --print-queries"
+      ],
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      }
+    }
+  ]
+}
