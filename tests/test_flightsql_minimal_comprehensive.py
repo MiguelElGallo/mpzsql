@@ -5,7 +5,10 @@ Tests the MinimalFlightSQLServer class which provides the core FlightSQL
 protocol implementation including actions, commands, and schema generation.
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
+import uuid
+import threading
+from typing import Iterator
 
 import pyarrow as pa
 import pyarrow.flight as pf
@@ -16,6 +19,27 @@ from src.mpzsql.config import ServerConfig
 from src.mpzsql.flightsql.minimal import (
     MinimalFlightSQLServer,
     SqlInfo,
+    SqlSupportedTransaction,
+    SqlSupportedCaseSensitivity,
+    SqlNullOrdering,
+)
+from src.mpzsql.flightsql.protobuf import (
+    ActionBeginTransactionRequest,
+    ActionEndTransactionRequest,
+    ActionCreatePreparedStatementRequest,
+    ActionClosePreparedStatementRequest,
+    CommandStatementQuery,
+    CommandStatementUpdate,
+    CommandGetCatalogs,
+    CommandGetDbSchemas,
+    CommandGetTables,
+    CommandGetTableTypes,
+    CommandGetColumns,
+    CommandGetSqlInfo,
+    CommandPreparedStatementQuery,
+    CommandPreparedStatementUpdate,
+    DoPutUpdateResult,
+    FlightSQLProtobuf,
 )
 
 
@@ -98,6 +122,36 @@ class TestSqlInfoConstants:
         assert SqlInfo.SQL_DDL_SCHEMA == 501
         assert SqlInfo.SQL_DDL_TABLE == 502
 
+    def test_additional_sql_constants(self):
+        """Test additional SQL constant classes."""
+        # Test SqlSupportedTransaction constants
+        assert hasattr(SqlSupportedTransaction, 'SQL_SUPPORTED_TRANSACTION_NONE')
+        assert hasattr(SqlSupportedTransaction, 'SQL_SUPPORTED_TRANSACTION_TRANSACTION')
+        assert hasattr(SqlSupportedTransaction, 'SQL_SUPPORTED_TRANSACTION_SAVEPOINT')
+        assert SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_NONE == 0
+        assert SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_TRANSACTION == 1
+        assert SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_SAVEPOINT == 2
+        
+        # Test SqlSupportedCaseSensitivity constants
+        assert hasattr(SqlSupportedCaseSensitivity, 'SQL_CASE_SENSITIVITY_UNKNOWN')
+        assert hasattr(SqlSupportedCaseSensitivity, 'SQL_CASE_SENSITIVITY_CASE_INSENSITIVE')
+        assert hasattr(SqlSupportedCaseSensitivity, 'SQL_CASE_SENSITIVITY_UPPERCASE')
+        assert hasattr(SqlSupportedCaseSensitivity, 'SQL_CASE_SENSITIVITY_LOWERCASE')
+        assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_UNKNOWN == 0
+        assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_CASE_INSENSITIVE == 1
+        assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_UPPERCASE == 2
+        assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_LOWERCASE == 3
+        
+        # Test SqlNullOrdering constants
+        assert hasattr(SqlNullOrdering, 'SQL_NULLS_SORTED_HIGH')
+        assert hasattr(SqlNullOrdering, 'SQL_NULLS_SORTED_LOW')
+        assert hasattr(SqlNullOrdering, 'SQL_NULLS_SORTED_AT_START')
+        assert hasattr(SqlNullOrdering, 'SQL_NULLS_SORTED_AT_END')
+        assert SqlNullOrdering.SQL_NULLS_SORTED_HIGH == 0
+        assert SqlNullOrdering.SQL_NULLS_SORTED_LOW == 1
+        assert SqlNullOrdering.SQL_NULLS_SORTED_AT_START == 2
+        assert SqlNullOrdering.SQL_NULLS_SORTED_AT_END == 3
+
 
 class TestMinimalFlightSQLServerInit:
     """Test MinimalFlightSQLServer initialization."""
@@ -119,6 +173,39 @@ class TestMinimalFlightSQLServerInit:
         assert server.open_sessions == {}
         assert hasattr(server, '_mutex')
         assert server._transaction_counter == 0
+
+    def test_init_with_auth_enabled(self, mock_backend, location):
+        """Test server initialization with authentication enabled."""
+        config = ServerConfig(
+            secret_key="test_secret",
+            username="test_user", 
+            password="test_pass"
+        )
+        
+        server = MinimalFlightSQLServer(
+            backend=mock_backend,
+            config=config,
+            location=location
+        )
+        
+        assert server.config.is_auth_enabled is True
+        assert server.backend == mock_backend
+        assert server.config == config
+
+    def test_init_with_advertised_location(self, mock_backend, config):
+        """Test server initialization with different advertised location."""
+        location = pf.Location.for_grpc_tcp("localhost", 8080)
+        advertised_location = pf.Location.for_grpc_tcp("external.host", 8080)
+        
+        server = MinimalFlightSQLServer(
+            backend=mock_backend,
+            config=config,
+            location=location,
+            advertised_location=advertised_location
+        )
+        
+        assert server.location == location
+        assert server.advertised_location == advertised_location
 
 
 class TestMinimalFlightSQLServerActions:
@@ -143,13 +230,30 @@ class TestMinimalFlightSQLServerActions:
         assert "ClosePreparedStatement" in action_types
         assert "BeginTransaction" in action_types
         assert "EndTransaction" in action_types
+        assert "CloseSession" in action_types
+        
+        # Verify action descriptions
+        for action in actions:
+            assert isinstance(action, pf.ActionType)
+            assert action.description is not None
+            assert len(action.description) > 0
     
-    def test_do_action_create_prepared_statement(self, server):
+    @patch('src.mpzsql.flightsql.minimal.ActionCreatePreparedStatementRequest')
+    @patch('src.mpzsql.flightsql.minimal.FlightSQLProtobuf')
+    def test_do_action_create_prepared_statement(self, mock_protobuf, mock_request_class, server):
         """Test do_action with CreatePreparedStatement."""
         context = Mock(spec=pf.ServerCallContext)
         
-        # Create action with mock data (since our classes don't serialize)
-        action_body = b'\x08\x01SELECT * FROM test_table'  # Mock protobuf data
+        # Mock the request object
+        mock_request = Mock()
+        mock_request.query = "SELECT * FROM test_table"
+        mock_request_class.return_value = mock_request
+        
+        # Mock protobuf result creation
+        mock_protobuf.create_action_create_prepared_statement_result.return_value = b"test_response"
+        
+        # Create action with mock data
+        action_body = b'mock_action_body'
         action = pf.Action("CreatePreparedStatement", pa.py_buffer(action_body))
         
         # Execute action
@@ -161,13 +265,26 @@ class TestMinimalFlightSQLServerActions:
         
         # Check that prepared statement was stored
         assert len(server.prepared_statements) == 1
+        
+        # Verify the stored prepared statement
+        stored_handle = list(server.prepared_statements.keys())[0]
+        stored_stmt = server.prepared_statements[stored_handle]
+        assert stored_stmt["sql"] == "SELECT * FROM test_table"
+        assert "schema" in stored_stmt
+        assert "transaction_id" in stored_stmt
+        assert "parameters" in stored_stmt
     
-    def test_do_action_begin_transaction(self, server):
+    @patch('src.mpzsql.flightsql.minimal.ActionBeginTransactionRequest')
+    def test_do_action_begin_transaction(self, mock_request_class, server):
         """Test do_action with BeginTransaction."""
         context = Mock(spec=pf.ServerCallContext)
         
+        # Mock the request object
+        mock_request = Mock()
+        mock_request_class.return_value = mock_request
+        
         # Create action with mock data
-        action_body = b'\x08\x01'  # Mock protobuf data
+        action_body = b'mock_action_body'
         action = pf.Action("BeginTransaction", pa.py_buffer(action_body))
         
         # Execute action
@@ -179,6 +296,174 @@ class TestMinimalFlightSQLServerActions:
         
         # Check that transaction was created
         assert len(server.open_transactions) == 1
+        assert server._transaction_counter == 1
+        
+        # Verify transaction ID format
+        transaction_id = list(server.open_transactions.keys())[0]
+        assert transaction_id.startswith("txn_")
+        assert server.open_transactions[transaction_id] == "active"
+
+    @patch('src.mpzsql.flightsql.minimal.ActionEndTransactionRequest')
+    def test_do_action_end_transaction_commit(self, mock_request_class, server):
+        """Test do_action with EndTransaction - COMMIT."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Setup initial transaction
+        server.open_transactions["txn_1"] = "active"
+        
+        # Mock the request object
+        mock_request = Mock()
+        mock_request.transaction_id = "txn_1"
+        mock_request.action = 0  # 0 for COMMIT
+        mock_request_class.return_value = mock_request
+        
+        # Create action
+        action_body = b'mock_action_body'
+        action = pf.Action("EndTransaction", pa.py_buffer(action_body))
+        
+        # Execute action
+        results = list(server.do_action(context, action))
+        
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, pf.Result)
+        
+        # Check that transaction was removed
+        assert "txn_1" not in server.open_transactions
+
+    @patch('src.mpzsql.flightsql.minimal.ActionEndTransactionRequest')
+    def test_do_action_end_transaction_rollback(self, mock_request_class, server):
+        """Test do_action with EndTransaction - ROLLBACK."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Setup initial transaction
+        server.open_transactions["txn_1"] = "active"
+        
+        # Mock the request object
+        mock_request = Mock()
+        mock_request.transaction_id = "txn_1"
+        mock_request.action = 1  # 1 for ROLLBACK
+        mock_request_class.return_value = mock_request
+        
+        # Create action
+        action_body = b'mock_action_body'
+        action = pf.Action("EndTransaction", pa.py_buffer(action_body))
+        
+        # Execute action
+        results = list(server.do_action(context, action))
+        
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, pf.Result)
+        
+        # Check that transaction was removed
+        assert "txn_1" not in server.open_transactions
+
+    @patch('src.mpzsql.flightsql.minimal.ActionEndTransactionRequest')
+    def test_do_action_end_transaction_unknown_id(self, mock_request_class, server):
+        """Test do_action with EndTransaction for unknown transaction ID."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Mock the request object with unknown transaction ID
+        mock_request = Mock()
+        mock_request.transaction_id = "unknown_txn"
+        mock_request.action = 0  # 0 for COMMIT
+        mock_request_class.return_value = mock_request
+        
+        # Create action
+        action_body = b'mock_action_body'
+        action = pf.Action("EndTransaction", pa.py_buffer(action_body))
+        
+        # Execute action and expect error
+        with pytest.raises(ValueError, match="Unknown transaction ID"):
+            list(server.do_action(context, action))
+
+    def test_do_action_close_session(self, server):
+        """Test do_action with CloseSession."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Setup some session state to clean up
+        server.prepared_statements["handle1"] = {"sql": "SELECT 1", "schema": None}
+        server.open_transactions["txn1"] = "active"
+        server.open_sessions["session1"] = {"user": "test"}
+        
+        # Create action
+        action_body = b''  # CloseSession typically has empty body
+        action = pf.Action("CloseSession", pa.py_buffer(action_body))
+        
+        # Execute action
+        results = list(server.do_action(context, action))
+        
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, pf.Result)
+        
+        # Check that session state was cleaned up
+        assert len(server.prepared_statements) == 0
+        assert len(server.open_transactions) == 0
+        assert len(server.open_sessions) == 0
+
+    @patch('src.mpzsql.flightsql.minimal.ActionClosePreparedStatementRequest')
+    def test_do_action_close_prepared_statement(self, mock_request_class, server):
+        """Test do_action with ClosePreparedStatement."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Setup a prepared statement
+        test_handle = uuid.uuid4().bytes
+        handle_key = test_handle.hex()
+        server.prepared_statements[handle_key] = {"sql": "SELECT 1", "schema": None}
+        
+        # Mock the request object
+        mock_request = Mock()
+        mock_request.prepared_statement_handle = test_handle
+        mock_request_class.return_value = mock_request
+        
+        # Create action
+        action_body = b'mock_action_body'
+        action = pf.Action("ClosePreparedStatement", pa.py_buffer(action_body))
+        
+        # Execute action
+        results = list(server.do_action(context, action))
+        
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, pf.Result)
+        
+        # Check that prepared statement was removed
+        assert handle_key not in server.prepared_statements
+
+    def test_do_action_close_prepared_statement_not_found(self, server):
+        """Test do_action with ClosePreparedStatement for non-existent handle."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Create action for non-existent prepared statement
+        action_body = b'mock_action_body'
+        action = pf.Action("ClosePreparedStatement", pa.py_buffer(action_body))
+        
+        # Mock the parsing to return a non-existent handle
+        with patch('src.mpzsql.flightsql.minimal.ActionClosePreparedStatementRequest') as mock_req:
+            mock_request = Mock()
+            mock_request.prepared_statement_handle = uuid.uuid4().bytes
+            mock_req.return_value = mock_request
+            
+            # Execute action - should not raise error, just log warning
+            results = list(server.do_action(context, action))
+            
+            assert len(results) == 1
+            result = results[0]
+            assert isinstance(result, pf.Result)
+
+    def test_do_action_unknown_action(self, server):
+        """Test do_action with unknown action type."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Create action with unknown type
+        action_body = b'mock_action_body'
+        action = pf.Action("UnknownAction", pa.py_buffer(action_body))
+        
+        # Execute action and expect error
+        with pytest.raises(NotImplementedError, match="Action UnknownAction not implemented"):
+            list(server.do_action(context, action))
 
 
 class TestMinimalFlightSQLServerFlightInfo:
@@ -199,7 +484,7 @@ class TestMinimalFlightSQLServerFlightInfo:
         
         # Create proper protobuf Any message for CommandStatementQuery
         from google.protobuf import any_pb2
-        from mpzsql.flightsql.protobuf import FlightSQLProtobuf
+        from src.mpzsql.flightsql.protobuf import FlightSQLProtobuf
         
         # Create the SQL query as raw bytes (as seen in protobuf.log)
         sql_query = "SELECT * FROM test_table"
@@ -233,7 +518,7 @@ class TestMinimalFlightSQLServerFlightInfo:
         
         # Create proper protobuf Any message for CommandGetCatalogs
         from google.protobuf import any_pb2
-        from mpzsql.flightsql.protobuf import FlightSQLProtobuf
+        from src.mpzsql.flightsql.protobuf import FlightSQLProtobuf
         
         # CommandGetCatalogs has no fields, so create proper Any message
         any_msg = any_pb2.Any()
@@ -252,3 +537,25 @@ class TestMinimalFlightSQLServerFlightInfo:
         assert flight_info.descriptor == descriptor
         assert len(flight_info.endpoints) > 0
         assert flight_info.schema is not None
+
+    def test_get_flight_info_unsupported_descriptor_type(self, server):
+        """Test get_flight_info with unsupported descriptor type."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Create descriptor with unsupported type
+        descriptor = pf.FlightDescriptor.for_path("test_path")
+        
+        with pytest.raises(NotImplementedError, match="Only CMD descriptors are supported"):
+            server.get_flight_info(context, descriptor)
+
+    def test_get_flight_info_unparseable_command(self, server):
+        """Test get_flight_info with unparseable command."""
+        context = Mock(spec=pf.ServerCallContext)
+        
+        # Create descriptor with invalid command bytes
+        descriptor = pf.FlightDescriptor.for_command(b"invalid_command")
+        
+        with patch('src.mpzsql.flightsql.protobuf.parse_any_command', return_value=None):
+            with pytest.raises(ValueError, match="Failed to parse command"):
+                server.get_flight_info(context, descriptor)
+
