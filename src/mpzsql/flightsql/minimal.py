@@ -261,6 +261,8 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             # Add transaction actions like Examples implementation
             pf.ActionType("BeginTransaction", "Begin a transaction"),
             pf.ActionType("EndTransaction", "End a transaction"),
+            # Add session management actions (FlightSQL standard)
+            pf.ActionType("CloseSession", "Close and invalidate the current session context"),
         ]
         return iter(actions)
 
@@ -299,6 +301,10 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             actions_log.info("1. Receiving command: End Transaction")
             actions_handler.flush()
             yield self._end_transaction(action_body)
+        elif action_type == "CloseSession":
+            actions_log.info("1. Receiving command: Close Session")
+            actions_handler.flush()
+            yield self._close_session(action_body)
         else:
             actions_log.info(f"1. Receiving command: Unknown Action - {action_type}")
             actions_handler.flush()
@@ -358,6 +364,63 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
 
         except Exception as e:
             logger.error(f"Error ending transaction: {e}", exc_info=True)
+            raise
+
+    def _close_session(self, action_body: bytes) -> pf.Result:
+        """Handle CloseSession action (FlightSQL standard session management)."""
+        try:
+            # CloseSession typically receives no parameters (0 bytes as seen in logs)
+            # This is a session cleanup action as per FlightSQL specification
+            
+            logger.info("Closing session")
+            print("SERVER: Closing session")
+            
+            # Log session closure for actions.log
+            actions_log.info("2. Command arguments: (none - session cleanup)")
+            actions_log.info("3. Command sent to backend: session cleanup")
+            
+            with self._mutex:
+                # Clean up any session-specific state
+                # For a stateless server, this is mostly a no-op, but we can:
+                # 1. Clean up any remaining prepared statements (defensive cleanup)
+                # 2. Clean up any open transactions (defensive cleanup)
+                # 3. Clean up session-specific resources
+                
+                session_cleanup_count = 0
+                
+                # Clean up any orphaned prepared statements
+                if self.prepared_statements:
+                    session_cleanup_count += len(self.prepared_statements)
+                    self.prepared_statements.clear()
+                    logger.info(f"Cleaned up {session_cleanup_count} prepared statements during session close")
+                
+                # Clean up any orphaned transactions  
+                if self.open_transactions:
+                    transaction_cleanup_count = len(self.open_transactions)
+                    self.open_transactions.clear()
+                    logger.info(f"Cleaned up {transaction_cleanup_count} transactions during session close")
+                    session_cleanup_count += transaction_cleanup_count
+                
+                # Clean up any session-specific data
+                if self.open_sessions:
+                    session_count = len(self.open_sessions)
+                    self.open_sessions.clear()
+                    logger.info(f"Cleaned up {session_count} session entries during session close")
+                    session_cleanup_count += session_count
+                
+            actions_log.info(f"4. Reply by backend: Session closed, cleaned up {session_cleanup_count} resources")
+            actions_log.info("5. Reply sent back: CloseSession completed successfully")
+            
+            logger.info("Session closed successfully")
+            print("SERVER: Session closed successfully")
+            
+            # Return empty result (standard for CloseSession)
+            return pf.Result(pa.py_buffer(b""))
+            
+        except Exception as e:
+            logger.error(f"Error closing session: {e}", exc_info=True)
+            actions_log.info(f"4. Reply by backend: ERROR - {e}")
+            actions_log.info("5. Reply sent back: CloseSession failed")
             raise
 
     def get_flight_info(
