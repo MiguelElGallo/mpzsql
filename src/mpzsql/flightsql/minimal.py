@@ -723,7 +723,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
 
         if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_UPDATE_TYPE_URL:
             command = CommandStatementUpdate()
-            any_command.Unpack(command)
+            command.Unpack(any_command)
             actions_log.info("1. Receiving command: SQL Update")
             actions_log.info(f"2. Command arguments: {command.query}")
             actions_log.info(f"3. Command sent to DuckDB: {command.query}")
