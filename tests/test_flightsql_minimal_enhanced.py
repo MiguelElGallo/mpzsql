@@ -155,8 +155,8 @@ class TestServerInitialization:
 
     def test_init_with_advertised_location(self, mock_backend, config):
         """Test server initialization with different advertised location."""
-        location = pf.Location.for_grpc_tcp("localhost", 8080)
-        advertised_location = pf.Location.for_grpc_tcp("external.host", 8080)
+        location = pf.Location.for_grpc_tcp("localhost", 0)  # Use port 0 for auto-assignment
+        advertised_location = pf.Location.for_grpc_tcp("external.host", 0)
         
         server = MinimalFlightSQLServer(
             backend=mock_backend,
