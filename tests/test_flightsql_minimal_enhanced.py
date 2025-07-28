@@ -354,6 +354,90 @@ class TestFlightInfoGeneration:
             assert isinstance(flight_info, pf.FlightInfo)
             mock_schema.assert_called_once()
 
+    def test_get_flight_info_schemas(self, server):
+        """Test _get_flight_info_schemas method."""
+        descriptor = pf.FlightDescriptor.for_command(b"test_command")
+        
+        from src.mpzsql.flightsql.protobuf import CommandGetDbSchemas
+        command = CommandGetDbSchemas()
+        command.catalog = "default"
+        
+        with patch('src.mpzsql.flightsql.protobuf.FlightSQLProtobuf.get_db_schemas_schema') as mock_schema:
+            test_schema = pa.schema([pa.field("schema_name", pa.string())])
+            mock_schema.return_value = test_schema
+            
+            flight_info = server._get_flight_info_schemas(descriptor, command)
+            
+            assert isinstance(flight_info, pf.FlightInfo)
+            mock_schema.assert_called_once()
+
+    def test_get_flight_info_tables(self, server):
+        """Test _get_flight_info_tables method."""
+        descriptor = pf.FlightDescriptor.for_command(b"test_command")
+        
+        from src.mpzsql.flightsql.protobuf import CommandGetTables
+        command = CommandGetTables()
+        command.include_schema = False
+        
+        with patch('src.mpzsql.flightsql.protobuf.FlightSQLProtobuf.get_tables_schema') as mock_schema:
+            test_schema = pa.schema([pa.field("table_name", pa.string())])
+            mock_schema.return_value = test_schema
+            
+            flight_info = server._get_flight_info_tables(descriptor, command)
+            
+            assert isinstance(flight_info, pf.FlightInfo)
+            mock_schema.assert_called_once()
+
+    def test_get_flight_info_table_types(self, server):
+        """Test _get_flight_info_table_types method."""
+        descriptor = pf.FlightDescriptor.for_command(b"test_command")
+        
+        from src.mpzsql.flightsql.protobuf import CommandGetTableTypes
+        command = CommandGetTableTypes()
+        
+        with patch('src.mpzsql.flightsql.protobuf.FlightSQLProtobuf.get_table_types_schema') as mock_schema:
+            test_schema = pa.schema([pa.field("table_type", pa.string())])
+            mock_schema.return_value = test_schema
+            
+            flight_info = server._get_flight_info_table_types(descriptor, command)
+            
+            assert isinstance(flight_info, pf.FlightInfo)
+            mock_schema.assert_called_once()
+
+    def test_get_flight_info_columns(self, server):
+        """Test _get_flight_info_columns method."""
+        descriptor = pf.FlightDescriptor.for_command(b"test_command")
+        
+        from src.mpzsql.flightsql.protobuf import CommandGetColumns
+        command = CommandGetColumns()
+        command.catalog = "default"
+        
+        with patch('src.mpzsql.flightsql.protobuf.FlightSQLProtobuf.get_columns_schema') as mock_schema:
+            test_schema = pa.schema([pa.field("column_name", pa.string())])
+            mock_schema.return_value = test_schema
+            
+            flight_info = server._get_flight_info_columns(descriptor, command)
+            
+            assert isinstance(flight_info, pf.FlightInfo)
+            mock_schema.assert_called_once()
+
+    def test_get_flight_info_sql_info(self, server):
+        """Test _get_flight_info_sql_info method."""
+        descriptor = pf.FlightDescriptor.for_command(b"test_command")
+        
+        from src.mpzsql.flightsql.protobuf import CommandGetSqlInfo
+        command = CommandGetSqlInfo()
+        command.info = [0, 1, 2]
+        
+        with patch('src.mpzsql.flightsql.protobuf.FlightSQLProtobuf.get_sql_info_schema') as mock_schema:
+            test_schema = pa.schema([pa.field("info_name", pa.int32()), pa.field("value", pa.string())])
+            mock_schema.return_value = test_schema
+            
+            flight_info = server._get_flight_info_sql_info(descriptor, command)
+            
+            assert isinstance(flight_info, pf.FlightInfo)
+            mock_schema.assert_called_once()
+
 
 class TestBackendInteraction:
     """Test backend interaction methods."""
@@ -418,6 +502,107 @@ class TestBackendInteraction:
         
         assert isinstance(result, pf.FlightDataStream)
         server.backend.get_catalogs.assert_called_once()
+
+    def test_do_get_schemas(self, server):
+        """Test _do_get_schemas method."""
+        from src.mpzsql.flightsql.protobuf import CommandGetDbSchemas
+        
+        test_table = pa.table({
+            "catalog_name": ["default", "default"],
+            "schema_name": ["main", "information_schema"]
+        })
+        server.backend.get_db_schemas.return_value = test_table
+        
+        command = CommandGetDbSchemas()
+        command.catalog = "default"
+        command.db_schema_filter_pattern = "%"
+        
+        result = server._do_get_schemas(command)
+        
+        assert isinstance(result, pf.FlightDataStream)
+        server.backend.get_db_schemas.assert_called_once_with(
+            catalog="default",
+            db_schema_filter_pattern="%"
+        )
+
+    def test_do_get_tables(self, server):
+        """Test _do_get_tables method."""
+        from src.mpzsql.flightsql.protobuf import CommandGetTables
+        
+        test_table = pa.table({
+            "catalog_name": ["default", "default"],
+            "schema_name": ["main", "main"],
+            "table_name": ["test_table", "another_table"],
+            "table_type": ["TABLE", "VIEW"]
+        })
+        server.backend.get_tables.return_value = test_table
+        
+        command = CommandGetTables()
+        command.catalog = "default"
+        command.db_schema_filter_pattern = "main"
+        command.table_name_filter_pattern = "%"
+        command.table_types = ["TABLE", "VIEW"]
+        command.include_schema = False
+        
+        result = server._do_get_tables(command)
+        
+        assert isinstance(result, pf.FlightDataStream)
+        server.backend.get_tables.assert_called_once_with(
+            catalog="default",
+            db_schema_filter_pattern="main",
+            table_name_filter_pattern="%",
+            table_types=["TABLE", "VIEW"],
+            include_schema=False
+        )
+
+    def test_do_get_columns(self, server):
+        """Test _do_get_columns method."""
+        from src.mpzsql.flightsql.protobuf import CommandGetColumns
+        
+        test_table = pa.table({
+            "catalog_name": ["default", "default"],
+            "schema_name": ["main", "main"],
+            "table_name": ["test_table", "test_table"],
+            "column_name": ["id", "name"],
+            "ordinal_position": [1, 2],
+            "is_nullable": [False, True],
+            "data_type": ["INTEGER", "VARCHAR"]
+        })
+        server.backend.get_columns.return_value = test_table
+        
+        command = CommandGetColumns()
+        command.catalog = "default"
+        command.db_schema_filter_pattern = "main"
+        command.table_name_filter_pattern = "test_table"
+        command.column_name_filter_pattern = "%"
+        
+        result = server._do_get_columns(command)
+        
+        assert isinstance(result, pf.FlightDataStream)
+        server.backend.get_columns.assert_called_once_with(
+            catalog="default",
+            db_schema_filter_pattern="main",
+            table_name_filter_pattern="test_table",
+            column_name_filter_pattern="%"
+        )
+
+    def test_do_get_sql_info(self, server):
+        """Test _do_get_sql_info method."""
+        from src.mpzsql.flightsql.protobuf import CommandGetSqlInfo
+        
+        test_table = pa.table({
+            "info_name": [0, 1, 2],
+            "value": ["MPZSQL", "1.0", "false"]
+        })
+        server.backend.get_sql_info.return_value = test_table
+        
+        command = CommandGetSqlInfo()
+        command.info = [0, 1, 2]
+        
+        result = server._do_get_sql_info(command)
+        
+        assert isinstance(result, pf.FlightDataStream)
+        server.backend.get_sql_info.assert_called_once_with([0, 1, 2])
 
 
 class TestCommandParsing:
