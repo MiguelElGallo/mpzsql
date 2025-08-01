@@ -4,7 +4,8 @@ CLI interface for MPZSQL server using typer.
 This module implements the command-line argument parsing and main entrypoint
 for the MPZSQL server, supporting all options from the original Examples implementation.
 """
-
+import subprocess
+import psycopg2
 import asyncio
 import logging
 import os
@@ -254,8 +255,6 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
         return True  # Skip if not configured or no specific database needed
 
     try:
-        import subprocess
-        import psycopg2
 
         console.print(f"[blue]🔧 Ensuring PostgreSQL database '{config.postgresql_catalogdb}' exists...[/blue]")
         logger.info("Ensuring PostgreSQL database exists", 
@@ -335,6 +334,7 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
         return False
 
 
+@app.command()
 def main(
     # Backend options
     backend: str = typer.Option(
