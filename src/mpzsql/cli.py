@@ -6,6 +6,7 @@ for the MPZSQL server, supporting all options from the original Examples impleme
 """
 import subprocess
 import psycopg2
+import psycopg2.errors
 import asyncio
 import logging
 import os
@@ -312,10 +313,15 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
             console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' already exists[/green]")
             logger.info("PostgreSQL database already exists", database=config.postgresql_catalogdb)
         else:
-            # Create the database
-            cursor.execute(f'CREATE DATABASE "{config.postgresql_catalogdb}";')
-            console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' created successfully[/green]")
-            logger.info("PostgreSQL database created", database=config.postgresql_catalogdb)
+            # Create the database with error handling for race conditions
+            try:
+                cursor.execute(f'CREATE DATABASE "{config.postgresql_catalogdb}";')
+                console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' created successfully[/green]")
+                logger.info("PostgreSQL database created", database=config.postgresql_catalogdb)
+            except psycopg2.errors.DuplicateDatabase:
+                # Database was created by another process between our check and creation attempt
+                console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' already exists (created concurrently)[/green]")
+                logger.info("PostgreSQL database already exists (created concurrently)", database=config.postgresql_catalogdb)
 
         cursor.close()
         conn.close()
