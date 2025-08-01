@@ -642,13 +642,14 @@ class TestMainFunction:
     @patch.dict(os.environ, {}, clear=True)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('mpzsql.cli.initialize_duckdb_basic')
     @patch('mpzsql.cli.print_startup_banner')
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_minimal_config(self, mock_server_class, mock_banner, mock_init_db, 
-                                 mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+                                 mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function with minimal configuration."""
         mock_server = Mock()
         mock_server.start.side_effect = KeyboardInterrupt()  # Simulate immediate stop for test
@@ -731,9 +732,10 @@ class TestMainFunction:
     @patch.dict(os.environ, {}, clear=True)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=False)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
-    def test_main_postgresql_connection_fails(self, mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+    def test_main_postgresql_connection_fails(self, mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function when PostgreSQL connection fails."""
         self.runner.invoke(cli.app, [
             "--postgresql-server", "localhost",
@@ -741,16 +743,39 @@ class TestMainFunction:
             "--postgresql-password", "password"
         ])
         
-        # Verify that PostgreSQL validation was called and failed
+        # Verify that PostgreSQL database creation and validation were called
+        mock_ensure_db.assert_called_once()
         mock_pg_validate.assert_called_once()
         # The function should have exited with error code due to connection failure
 
     @patch.dict(os.environ, {}, clear=True)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=False)
+    @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
+    @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
+    def test_main_postgresql_database_creation_fails(self, mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
+        """Test main function when PostgreSQL database creation fails."""
+        self.runner.invoke(cli.app, [
+            "--postgresql-server", "localhost",
+            "--postgresql-user", "user",
+            "--postgresql-password", "password",
+            "--postgresql-catalogdb", "testdb"
+        ])
+        
+        # Verify that database creation was called and failed
+        mock_ensure_db.assert_called_once()
+        # Validation should not be called since database creation failed
+        mock_pg_validate.assert_not_called()
+        # The function should have exited with error code due to database creation failure
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch('mpzsql.cli.LogfireManager')
+    @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=False)
-    def test_main_azure_connection_fails(self, mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+    def test_main_azure_connection_fails(self, mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function when Azure Storage connection fails."""
         self.runner.invoke(cli.app, [
             "--azure-storage-account", "account",
@@ -763,13 +788,14 @@ class TestMainFunction:
     @patch.dict(os.environ, {}, clear=True)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('asyncio.run')
     @patch('mpzsql.cli.print_startup_banner')
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_with_azure_enabled(self, mock_server_class, mock_banner, mock_asyncio_run,
-                                     mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+                                     mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function with Azure Storage enabled."""
         mock_server = Mock()
         mock_server_class.return_value = mock_server
@@ -787,13 +813,14 @@ class TestMainFunction:
     @patch.dict(os.environ, {}, clear=True)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('mpzsql.cli.initialize_duckdb_basic')
     @patch('mpzsql.cli.print_startup_banner')
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_keyboard_interrupt(self, mock_server_class, mock_banner, mock_init_db,
-                                     mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+                                     mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function with keyboard interrupt."""
         mock_server = Mock()
         mock_server.start.side_effect = KeyboardInterrupt()
@@ -808,13 +835,14 @@ class TestMainFunction:
     @patch.dict(os.environ, {}, clear=True)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('mpzsql.cli.initialize_duckdb_basic')
     @patch('mpzsql.cli.print_startup_banner')
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_server_error(self, mock_server_class, mock_banner, mock_init_db,
-                               mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+                               mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function with server error."""
         mock_server = Mock()
         mock_server.start.side_effect = Exception("Server failed")
@@ -844,6 +872,7 @@ class TestMainFunction:
     }, clear=False)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('pathlib.Path.exists', return_value=True)
@@ -852,7 +881,7 @@ class TestMainFunction:
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_environment_variables(self, mock_server_class, mock_banner, mock_asyncio_run,
                                         mock_exists, mock_azure_validate, mock_pg_validate, 
-                                        mock_logger, mock_logfire):
+                                        mock_ensure_db, mock_logger, mock_logfire):
         """Test main function with environment variables."""
         mock_server = Mock()
         mock_server_class.return_value = mock_server
@@ -870,13 +899,14 @@ class TestMainFunction:
     @patch.dict(os.environ, {"WEBSITE_HOSTNAME": "azure_web_app.azurewebsites.net"}, clear=False)
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('mpzsql.cli.initialize_duckdb_basic')
     @patch('mpzsql.cli.print_startup_banner')
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_azure_web_app_hostname(self, mock_server_class, mock_banner, mock_init_db,
-                                         mock_azure_validate, mock_pg_validate, mock_logger, mock_logfire):
+                                         mock_azure_validate, mock_pg_validate, mock_ensure_db, mock_logger, mock_logfire):
         """Test main function with Azure Web App hostname."""
         mock_server = Mock()
         mock_server_class.return_value = mock_server
@@ -917,13 +947,14 @@ class TestMainFunction:
     @patch('mpzsql.cli.LogfireManager')
     @patch('mpzsql.cli.get_main_logger')
     @patch('pathlib.Path.read_text', return_value="CREATE TABLE file_test (id INT);")
+    @patch('mpzsql.cli.ensure_postgresql_database', return_value=True)
     @patch('mpzsql.cli.validate_postgresql_connection', return_value=True)
     @patch('mpzsql.cli.validate_azure_storage_connection', return_value=True)
     @patch('mpzsql.cli.initialize_duckdb_basic')
     @patch('mpzsql.cli.print_startup_banner')
     @patch('mpzsql.cli.MPZSQLServer')
     def test_main_init_sql_file(self, mock_server_class, mock_banner, mock_init_db, mock_azure_validate,
-                                mock_pg_validate, mock_read_text, mock_logger, mock_logfire):
+                                mock_pg_validate, mock_ensure_db, mock_read_text, mock_logger, mock_logfire):
         """Test main function with init SQL file."""
         mock_server = Mock()
         mock_server_class.return_value = mock_server

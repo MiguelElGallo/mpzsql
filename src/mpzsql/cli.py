@@ -590,7 +590,10 @@ def main(
     connection_checks_passed = True
 
     if config.is_postgresql_enabled:
-        if not validate_postgresql_connection(config):
+        # Ensure PostgreSQL database exists before validating connection
+        if not ensure_postgresql_database(config):
+            connection_checks_passed = False
+        elif not validate_postgresql_connection(config):
             connection_checks_passed = False
 
     if config.is_azure_storage_enabled:
