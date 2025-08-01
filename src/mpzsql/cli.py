@@ -246,7 +246,95 @@ def load_init_sql(
     return init_sql
 
 
-@app.command()
+def ensure_postgresql_database(config: ServerConfig) -> bool:
+    """Ensure PostgreSQL catalog database exists, creating it if necessary."""
+    logger = get_main_logger()
+    
+    if not config.is_postgresql_enabled or not config.postgresql_catalogdb:
+        return True  # Skip if not configured or no specific database needed
+
+    try:
+        import subprocess
+        import psycopg2
+
+        console.print(f"[blue]🔧 Ensuring PostgreSQL database '{config.postgresql_catalogdb}' exists...[/blue]")
+        logger.info("Ensuring PostgreSQL database exists", 
+                   database=config.postgresql_catalogdb,
+                   server=config.postgresql_server)
+
+        # Handle Azure authentication
+        password = config.postgresql_password
+        if password == "AZURE":
+            try:
+                result = subprocess.run(
+                    [
+                        "az",
+                        "account",
+                        "get-access-token",
+                        "--resource",
+                        "https://ossrdbms-aad.database.windows.net",
+                        "--query",
+                        "accessToken",
+                        "--output",
+                        "tsv",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                password = result.stdout.strip()
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                console.print(f"[red]❌ Failed to get Azure access token: {e}[/red]")
+                logger.error("Failed to get Azure access token for database creation", error=str(e))
+                return False
+
+        # Connect to default postgres database to check/create target database
+        conn_params = {
+            "host": config.postgresql_server,
+            "port": config.postgresql_port,
+            "user": config.postgresql_user,
+            "password": password,
+            "database": "postgres",  # Connect to default database
+            "connect_timeout": 10,
+        }
+
+        conn = psycopg2.connect(**conn_params)
+        conn.autocommit = True  # Required for CREATE DATABASE
+        cursor = conn.cursor()
+
+        # Check if database exists
+        cursor.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s;",
+            (config.postgresql_catalogdb,)
+        )
+        exists = cursor.fetchone()
+
+        if exists:
+            console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' already exists[/green]")
+            logger.info("PostgreSQL database already exists", database=config.postgresql_catalogdb)
+        else:
+            # Create the database
+            cursor.execute(f'CREATE DATABASE "{config.postgresql_catalogdb}";')
+            console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' created successfully[/green]")
+            logger.info("PostgreSQL database created", database=config.postgresql_catalogdb)
+
+        cursor.close()
+        conn.close()
+        return True
+
+    except ImportError:
+        console.print("[red]❌ Database creation failed: psycopg2-binary not installed[/red]")
+        logger.error("Database creation failed: psycopg2-binary not installed")
+        return False
+    except Exception as e:
+        console.print(f"[red]❌ Database creation failed: {e}[/red]")
+        logger.error("Database creation failed", 
+                    error=str(e),
+                    database=config.postgresql_catalogdb,
+                    server=config.postgresql_server)
+        return False
+
+
 def main(
     # Backend options
     backend: str = typer.Option(
@@ -624,6 +712,11 @@ async def initialize_duckdb_with_azure(
 
             # Create PostgreSQL secret if configured
             if config.is_postgresql_enabled:
+                # Ensure the PostgreSQL database exists
+                if not ensure_postgresql_database(config):
+                    console.print("[red]❌ Failed to ensure PostgreSQL database exists[/red]")
+                    raise Exception("PostgreSQL database creation failed")
+
                 console.print("\n🔐 Creating PostgreSQL secret...")
                 try:
                     # Handle special case for Azure authentication
@@ -652,6 +745,7 @@ async def initialize_duckdb_with_azure(
                     else:
                         pg_password = config.postgresql_password
 
+                    
                     pg_secret_sql = f"""
                     CREATE SECRET (
                         TYPE postgres,
