@@ -447,8 +447,9 @@ class TestDuckDBInitialization:
     @patch('mpzsql.cli.console')
     @patch('mpzsql.cli.setup_azure_filesystem')
     @patch('mpzsql.cli.setup_duckdb_connection')
+    @patch('mpzsql.cli.ensure_postgresql_database')
     @patch('azure.identity.aio.DefaultAzureCredential')
-    async def test_initialize_duckdb_with_azure_postgresql_enabled(self, mock_credential_class, mock_setup_duckdb, mock_setup_azure, mock_console):
+    async def test_initialize_duckdb_with_azure_postgresql_enabled(self, mock_credential_class, mock_ensure_db, mock_setup_duckdb, mock_setup_azure, mock_console):
         """Test Azure DuckDB initialization with PostgreSQL enabled."""
         config = Mock()
         config.is_azure_storage_enabled = True
@@ -463,6 +464,8 @@ class TestDuckDBInitialization:
         
         mock_credential = AsyncMock()
         mock_credential_class.return_value = mock_credential
+        
+        mock_ensure_db.return_value = True
         
         mock_az_fs = Mock()
         mock_setup_azure.return_value = mock_az_fs
@@ -482,8 +485,9 @@ class TestDuckDBInitialization:
     @patch('mpzsql.cli.console')
     @patch('mpzsql.cli.setup_azure_filesystem')
     @patch('mpzsql.cli.setup_duckdb_connection')
+    @patch('mpzsql.cli.ensure_postgresql_database')
     @patch('azure.identity.aio.DefaultAzureCredential')
-    async def test_initialize_duckdb_with_azure_postgresql_azure_auth(self, mock_credential_class, mock_setup_duckdb, mock_setup_azure, mock_console):
+    async def test_initialize_duckdb_with_azure_postgresql_azure_auth(self, mock_credential_class, mock_ensure_db, mock_setup_duckdb, mock_setup_azure, mock_console):
         """Test Azure DuckDB initialization with PostgreSQL Azure auth."""
         config = Mock()
         config.is_azure_storage_enabled = True
@@ -498,6 +502,8 @@ class TestDuckDBInitialization:
         
         mock_credential = AsyncMock()
         mock_credential_class.return_value = mock_credential
+        
+        mock_ensure_db.return_value = True
         
         mock_az_fs = Mock()
         mock_setup_azure.return_value = mock_az_fs
