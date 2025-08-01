@@ -42,9 +42,6 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
     if not config.is_postgresql_enabled:
         return True  # Skip test if not configured
 
-    if config.is_postgresql_enabled:
-        validate_postgresql_connection(config)
-
     try:
         import subprocess
 
@@ -592,7 +589,12 @@ def main(
     # Test external connections if configured
     connection_checks_passed = True
 
-
+    if config.is_postgresql_enabled:
+        # Ensure PostgreSQL database exists before validating connection
+        if not ensure_postgresql_database(config):
+            connection_checks_passed = False
+        elif not validate_postgresql_connection(config):
+            connection_checks_passed = False
 
     if config.is_azure_storage_enabled:
         if not validate_azure_storage_connection(config):
