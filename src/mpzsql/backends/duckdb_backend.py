@@ -146,15 +146,18 @@ class DuckDBBackend(DatabaseBackend):
             fh.flush()  # Force flush on error
             raise
 
-    def execute_update(self, query: str) -> int:
+    def execute_update(self, query: str, params: Optional[List] = None) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
         try:
             duckdb_log.info(f"Executing update query: {query}")
             duckdb_logger.info("Executing DuckDB update query", query=query)
+            if params:
+                duckdb_log.info(f"With parameters: {params}")
+                duckdb_logger.info("Update query parameters provided", params=params)
             fh.flush()  # Force flush before execution
             
             # Execute the query and get the result
-            result = self.connection.execute(query).fetch_arrow_table()
+            result = self.connection.execute(query, params).fetch_arrow_table()
             
             duckdb_log.info(f"Update query result:\n{result}")
             duckdb_logger.info("Update query executed", result_rows=result.num_rows, result_columns=result.num_columns)
@@ -298,6 +301,78 @@ class DuckDBBackend(DatabaseBackend):
         try:
             # For SELECT statements and other queries that return data,
             # use DuckDB's PREPARE to get the schema
+            
+            duckdb_log.info(f"Getting schema for query: {query}")
+            
+            # Special handling for parameterized queries (contains ?)
+            if '?' in query:
+                duckdb_log.info("Query contains parameters, using special handling")
+                # For parameterized queries, try to get schema by executing a LIMIT 0 version
+                # This approach works better than PREPARE with unbound parameters
+                try:
+                    # Create a version of the query with LIMIT 0 to get just the schema
+                    # Replace parameters with reasonable dummy values
+                    schema_query = query
+                    
+                    # Simple parameter replacement strategy
+                    # For most common cases, replace ? with 1 (works for numeric, string comparisons)
+                    param_count = query.count('?')
+                    duckdb_log.info(f"Found {param_count} parameters in query")
+                    
+                    # Replace each ? with a dummy value that should work for schema detection
+                    for i in range(param_count):
+                        schema_query = schema_query.replace('?', '1', 1)  # Use 1 as a generic dummy value
+                    
+                    # Add LIMIT 0 to avoid actually executing the query with data
+                    if 'LIMIT' not in schema_query.upper():
+                        schema_query = f"({schema_query}) LIMIT 0"
+                    
+                    duckdb_log.info(f"Schema detection query: {schema_query}")
+                    
+                    # Execute the query to get the schema
+                    result = self.connection.execute(schema_query).fetch_arrow_table()
+                    schema = result.schema
+                    duckdb_log.info(f"Created schema from query execution: {schema}")
+                    return schema
+                    
+                except Exception as param_error:
+                    duckdb_log.error(f"Query-based schema detection failed: {param_error}")
+                    # Try the PREPARE approach as fallback
+                    try:
+                        # Replace parameters with NULL for PREPARE
+                        schema_query = query
+                        param_count = query.count('?')
+                        for i in range(param_count):
+                            schema_query = schema_query.replace('?', 'NULL', 1)
+                        
+                        duckdb_log.info(f"Fallback PREPARE schema detection query: {schema_query}")
+                        prepare_query = f"PREPARE stmt AS {schema_query}"
+                        self.connection.execute(prepare_query)
+                        
+                        # Get the prepared statement info
+                        describe_result = self.connection.execute("DESCRIBE stmt").fetchall()
+                        duckdb_log.info(f"DESCRIBE result: {describe_result}")
+                        
+                        # Clean up the prepared statement
+                        self.connection.execute("DEALLOCATE stmt")
+                        
+                        fields = []
+                        for row in describe_result:
+                            col_name = row[0]
+                            col_type = row[1]
+                            # Convert DuckDB types to Arrow types
+                            arrow_type = self._duckdb_type_to_arrow(col_type)
+                            fields.append(pa.field(col_name, arrow_type))
+
+                        schema = pa.schema(fields)
+                        duckdb_log.info(f"Created schema from PREPARE: {schema}")
+                        return schema
+                    except Exception as prepare_error:
+                        duckdb_log.error(f"PREPARE fallback also failed: {prepare_error}")
+                        # Last resort: return empty schema
+                        return pa.schema([])
+            
+            duckdb_log.info("Using standard PREPARE approach")
             prepare_query = f"PREPARE stmt AS {query}"
             self.connection.execute(prepare_query)
             

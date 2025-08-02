@@ -13,7 +13,7 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any, Dict, Iterator
+from typing import Any, Dict, Iterator, List, Optional
 
 import pyarrow as pa
 import pyarrow.flight as pf  # keep original alias for pf.<...>
@@ -716,8 +716,20 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                     )
                     actions_handler.flush()
 
-                    # Execute the query and return the results as a FlightDataStream
-                    return self._do_get_statement_from_query(query)
+                    # Retrieve stored parameters for this prepared statement
+                    stored_params = self.prepared_statements[handle].get("parameters", [])
+                    if stored_params:
+                        # Convert parameter batches to Python list format for DuckDB
+                        params = self._convert_parameter_batches_to_list(stored_params)
+                        logger.info(f"Retrieved stored parameters for prepared statement: {params}")
+                        print(f"SERVER: Retrieved stored parameters: {params}")
+                    else:
+                        params = None
+                        logger.info("No parameters stored for this prepared statement")
+                        print("SERVER: No parameters found for prepared statement")
+
+                    # Execute the query with parameters
+                    return self._do_get_statement_from_query(query, params)
                 except Exception as e:
                     print(
                         f"SERVER: ERROR - Exception in do_get for prepared statement: {e}"
@@ -857,7 +869,12 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 actions_handler.flush()
 
                 # Execute the update with parameters if available
-                record_count = self._do_put_update_from_query(query)
+                params = None
+                if parameter_batches:
+                    params = self._extract_parameters_from_batches(parameter_batches)
+                    actions_log.info(f"Extracted parameters: {params}")
+                    
+                record_count = self._do_put_update_from_query(query, params)
 
                 result = DoPutUpdateResult(record_count=record_count)
                 writer.write(pa.py_buffer(result.SerializeToString()))
@@ -971,9 +988,12 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 )
                 actions_handler.flush()
                 try:
+                    print(f"SERVER: DEBUG - About to get schema for query: {query}")
                     schema = self.backend.get_statement_schema(query)
+                    print(f"SERVER: DEBUG - Schema obtained: {schema}")
                     routing_log.info(f"Schema determined for SELECT query: {schema}")
                 except Exception as e:
+                    print(f"SERVER: DEBUG - Schema detection failed: {e}")
                     logger.warning(
                         f"Could not get schema for SELECT query '{query}': {e}"
                     )
@@ -1134,18 +1154,27 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         query = command.query
         return self._do_get_statement_from_query(query)
 
-    def _do_get_statement_from_query(self, query: str) -> pf.FlightDataStream:
+    def _do_get_statement_from_query(self, query: str, params: Optional[List] = None) -> pf.FlightDataStream:
         logger.info(f"Executing query: {query}")
         print(f"SERVER: Executing query: {query}")
+        if params:
+            logger.info(f"With parameters: {params}")
+            print(f"SERVER: With parameters: {params}")
 
         # Log command details for actions.log
         actions_log.info("1. Receiving command: SQL Query")
         actions_log.info(f"2. Command arguments: {query}")
-        actions_log.info(f"3. Command sent to DuckDB: {query}")
+        if params:
+            actions_log.info(f"3. Command sent to DuckDB: {query} with parameters {params}")
+        else:
+            actions_log.info(f"3. Command sent to DuckDB: {query}")
         actions_handler.flush()
 
         try:
-            result = self.backend.execute_query(query)
+            if params:
+                result = self.backend.execute_query(query, params)
+            else:
+                result = self.backend.execute_query(query)
             actions_log.info(f"4. Reply by DuckDB: {result}")
             actions_log.info(
                 f"5. Reply sent back: FlightDataStream with {len(result)} rows"
@@ -1161,6 +1190,46 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             error_schema = pa.schema([pa.field("error", pa.string())])
             error_table = pa.table({"error": pa.array([str(e)])}, schema=error_schema)
             return pf.RecordBatchStream(error_table)
+
+    def _convert_parameter_batches_to_list(self, parameter_batches: List[pa.RecordBatch]) -> List:
+        """
+        Convert PyArrow parameter batches to a simple Python list for DuckDB.
+        
+        The client sends parameters as PyArrow record batches, but DuckDB expects 
+        a simple Python list of values like [19] for a single parameter.
+        """
+        if not parameter_batches:
+            return []
+        
+        try:
+            params = []
+            
+            # Iterate through all parameter batches
+            for batch in parameter_batches:
+                logger.info(f"Processing parameter batch with {batch.num_columns} columns and {batch.num_rows} rows")
+                
+                # For each row in the batch (each row represents one execution)
+                for row_idx in range(batch.num_rows):
+                    row_params = []
+                    
+                    # For each column in the batch (each column is a parameter)
+                    for col_idx in range(batch.num_columns):
+                        column = batch.column(col_idx)
+                        value = column[row_idx].as_py()  # Convert Arrow scalar to Python value
+                        row_params.append(value)
+                        logger.info(f"Parameter {col_idx}: {value} (type: {type(value)})")
+                    
+                    # For prepared statements, we typically expect one row of parameters
+                    # If there are multiple rows, we take the first one
+                    if row_idx == 0:
+                        params.extend(row_params)
+                    
+            logger.info(f"Converted parameter batches to: {params}")
+            return params
+            
+        except Exception as e:
+            logger.error(f"Error converting parameter batches: {e}", exc_info=True)
+            return []
 
     def _do_get_catalogs(self, command: CommandGetCatalogs) -> pf.FlightDataStream:
         actions_log.info("1. Receiving command: API - GetCatalogs")
@@ -1259,13 +1328,16 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         query = command.query
         return self._do_put_update_from_query(query)
 
-    def _do_put_update_from_query(self, query: str) -> int:
+    def _do_put_update_from_query(self, query: str, params: Optional[List] = None) -> int:
         actions_log.info("1. Receiving command: SQL Update")
         actions_log.info(f"2. Command arguments: {query}")
         actions_log.info(f"3. Command sent to DuckDB: {query}")
 
         try:
-            result = self.backend.execute_update(query)
+            if params:
+                result = self.backend.execute_update(query, params)
+            else:
+                result = self.backend.execute_update(query)
             actions_log.info(f"4. Reply by DuckDB: {result} rows affected")
             actions_log.info(f"5. Reply sent back: {result} rows affected")
             return result
@@ -1273,6 +1345,19 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             actions_log.info(f"4. Reply by DuckDB: ERROR - {e}")
             actions_log.info("5. Reply sent back: Error")
             raise e
+
+    def _extract_parameters_from_batches(self, parameter_batches: List[pa.RecordBatch]) -> List:
+        """Extract parameter values from PyArrow record batches into a flat list."""
+        params = []
+        for batch in parameter_batches:
+            # For each row in the batch
+            for row_index in range(batch.num_rows):
+                # For each column in the batch
+                for col_index in range(batch.num_columns):
+                    column = batch.column(col_index)
+                    value = column[row_index].as_py()
+                    params.append(value)
+        return params
 
     def _parse_statement_query(self, any_command) -> CommandStatementQuery:
         """Parse CommandStatementQuery from Any message."""
