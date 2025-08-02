@@ -26,12 +26,12 @@ class DatabaseBackend(ABC):
         pass
     
     @abstractmethod
-    def execute_query(self, query: str) -> pa.Table:
+    def execute_query(self, query: str, params: Optional[List] = None) -> pa.Table:
         """Execute a query and return an Arrow Table."""
         pass
     
     @abstractmethod
-    def execute_update(self, query: str) -> int:
+    def execute_update(self, query: str, params: Optional[List] = None) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
         pass
     
