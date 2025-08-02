@@ -72,12 +72,15 @@ class SQLiteBackend(DatabaseBackend):
                 logger.error(f"SQL execution failed: {e}")
                 raise
     
-    def execute_query(self, query: str) -> pa.Table:
+    def execute_query(self, query: str, params: Optional[List] = None) -> pa.Table:
         """Execute a query and return an Arrow Table."""
         with self._lock:  # Ensure thread-safe access
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(query)
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
                 
                 # Get column information
                 columns = [desc[0] for desc in cursor.description]
@@ -155,12 +158,15 @@ class SQLiteBackend(DatabaseBackend):
                 except Exception:
                     raise e
     
-    def execute_update(self, query: str) -> int:
+    def execute_update(self, query: str, params: Optional[List] = None) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
         with self._lock:  # Ensure thread-safe access
             try:
                 cursor = self.connection.cursor()
-                cursor.execute(query)
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
                 affected_rows = cursor.rowcount
                 cursor.close()
                 logger.debug(f"Update query affected {affected_rows} rows")
