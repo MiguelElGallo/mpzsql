@@ -60,6 +60,7 @@ class TestRawFlightDoPutIntegration:
         # Step 1: Create test data
         arrow_table = self.create_sample_arrow_table()
         table_name = "integration_orders"
+        transformed_table_name = f"my_ducklake.main.{table_name}"  # What FlightSQL server creates
         
         # Step 2: Use raw Flight do_put to upload data (batch mode)
         descriptor = pf.FlightDescriptor.for_path(table_name.encode('utf-8'))
@@ -75,18 +76,18 @@ class TestRawFlightDoPutIntegration:
         # Execute the upload
         result = self.server._handle_file_upload_do_put(context, descriptor, reader, writer)
         
-        # Step 3: Verify table was created in DuckDB
-        row_count = self.backend.get_table_row_count(table_name)
+        # Step 3: Verify table was created in DuckDB (use transformed name)
+        row_count = self.backend.get_table_row_count(transformed_table_name)
         assert row_count == 5
         
-        # Step 4: Verify schema
-        schema = self.backend.get_table_schema(table_name)
+        # Step 4: Verify schema (use transformed name)
+        schema = self.backend.get_table_schema(transformed_table_name)
         assert len(schema) == 6
         assert 'order_id' in schema.names
         assert 'customer_name' in schema.names
         
-        # Step 5: Query the data
-        result = self.backend.execute_query(f"SELECT * FROM {table_name} ORDER BY order_id")
+        # Step 5: Query the data (use transformed name)
+        result = self.backend.execute_query(f"SELECT * FROM {transformed_table_name} ORDER BY order_id")
         data = result.to_pylist()
         
         assert len(data) == 5
@@ -96,7 +97,8 @@ class TestRawFlightDoPutIntegration:
 
     def test_complete_streaming_upload_workflow(self):
         """Test complete streaming upload workflow: schema -> chunks -> verify."""
-        table_name = "streaming_sales"
+        table_name = "streaming_sales_stream"  # Use _stream suffix to trigger streaming mode
+        transformed_table_name = f"my_ducklake.main.{table_name}"  # What FlightSQL server creates
         
         # Step 1: Create schema and chunks
         schema = pa.schema([
@@ -124,33 +126,34 @@ class TestRawFlightDoPutIntegration:
         descriptor = pf.FlightDescriptor.for_path(table_name.encode('utf-8'))
         context = Mock(spec=pf.ServerCallContext)
         
-        # Mock reader for streaming (multiple read_chunk calls)
+        # Mock reader for streaming - needs to be iterable with chunk.data
         reader = Mock()
         reader.schema = schema
         
-        # Set up reader to return chunks sequentially
-        chunks = [chunk1, chunk2]
-        chunk_iter = iter(chunks)
+        # Create mock chunks with .data attribute (RecordBatch simulation)
+        mock_chunk1 = Mock()
+        mock_chunk1.data = chunk1.to_batches()[0]  # Convert table to RecordBatch
         
-        def mock_read_chunk():
-            try:
-                return next(chunk_iter)
-            except StopIteration:
-                return None
+        mock_chunk2 = Mock()
+        mock_chunk2.data = chunk2.to_batches()[0]  # Convert table to RecordBatch
         
-        reader.read_chunk = mock_read_chunk
+        # Make reader iterable
+        def mock_iter(self):
+            return iter([mock_chunk1, mock_chunk2])
+        
+        reader.__iter__ = mock_iter
         
         writer = Mock()
         
         # Execute streaming upload
         result = self.server._handle_file_upload_do_put(context, descriptor, reader, writer)
         
-        # Step 3: Verify final result
-        row_count = self.backend.get_table_row_count(table_name)
+        # Step 3: Verify final result (use transformed name)
+        row_count = self.backend.get_table_row_count(transformed_table_name)
         assert row_count == 5  # 3 + 2 from chunks
         
-        # Step 4: Query and verify data integrity
-        result = self.backend.execute_query(f"SELECT COUNT(DISTINCT region) as regions FROM {table_name}")
+        # Step 4: Query and verify data integrity (use transformed name)
+        result = self.backend.execute_query(f"SELECT COUNT(DISTINCT region) as regions FROM {transformed_table_name}")
         unique_regions = result.to_pylist()[0]['regions']
         assert unique_regions == 4  # North, South, East, West
 
@@ -163,7 +166,8 @@ class TestRawFlightDoPutIntegration:
             'value': [10.5, 20.5, 30.5]
         })
         table_name = "flight_info_test"
-        self.backend.create_table_from_arrow(table_name, test_data)
+        transformed_table_name = f"my_ducklake.main.{table_name}"  # What FlightSQL server creates
+        self.backend.create_table_from_arrow(transformed_table_name, test_data)
         
         # Step 2: Use get_flight_info to retrieve metadata
         descriptor = pf.FlightDescriptor.for_path(table_name.encode('utf-8'))
@@ -186,13 +190,17 @@ class TestRawFlightDoPutIntegration:
         """Test error handling in integration scenarios."""
         context = Mock(spec=pf.ServerCallContext)
         
-        # Test 1: Non-existent table in get_flight_info
+        # Test 1: Non-existent table in get_flight_info - should return error schema gracefully
         descriptor = pf.FlightDescriptor.for_path("nonexistent_table".encode('utf-8'))
         
-        with pytest.raises(Exception):
-            self.server.get_flight_info(context, descriptor)
+        flight_info = self.server.get_flight_info(context, descriptor)
+        # Should return graceful error response (total_records=0, error schema)
+        assert flight_info.total_records == 0
+        # Check that schema indicates an error (should have 'error' field)
+        schema_names = [field.name for field in flight_info.schema]
+        assert 'error' in schema_names
         
-        # Test 2: Invalid data in do_put
+        # Test 2: Invalid data in do_put - this should raise an exception
         descriptor = pf.FlightDescriptor.for_path("invalid_upload".encode('utf-8'))
         reader = Mock()
         reader.schema = pa.schema([pa.field('col1', pa.string())])
@@ -206,16 +214,17 @@ class TestRawFlightDoPutIntegration:
     def test_table_replacement_integration(self):
         """Test table replacement functionality."""
         table_name = "replacement_test"
+        transformed_table_name = f"my_ducklake.main.{table_name}"  # What FlightSQL server creates
         
         # Step 1: Create initial table
         initial_data = pa.table({
             'id': [1, 2],
             'category': ['A', 'B']
         })
-        self.backend.create_table_from_arrow(table_name, initial_data)
+        self.backend.create_table_from_arrow(transformed_table_name, initial_data)
         
-        # Verify initial state
-        count1 = self.backend.get_table_row_count(table_name)
+        # Verify initial state (use transformed name)
+        count1 = self.backend.get_table_row_count(transformed_table_name)
         assert count1 == 2
         
         # Step 2: Replace with new data via Flight upload
@@ -236,28 +245,35 @@ class TestRawFlightDoPutIntegration:
         # Execute replacement upload
         self.server._handle_file_upload_do_put(context, descriptor, reader, writer)
         
-        # Step 3: Verify replacement
-        count2 = self.backend.get_table_row_count(table_name)
+        # Step 3: Verify replacement (use transformed name)
+        count2 = self.backend.get_table_row_count(transformed_table_name)
         assert count2 == 3  # New table has 3 rows
         
-        # Verify data was actually replaced
-        result = self.backend.execute_query(f"SELECT id FROM {table_name} ORDER BY id")
+        # Verify data was actually replaced (use transformed name)
+        result = self.backend.execute_query(f"SELECT id FROM {transformed_table_name} ORDER BY id")
         ids = [row['id'] for row in result.to_pylist()]
         assert ids == [10, 20, 30]  # New IDs, not original ones
 
     def test_complex_data_types_integration(self):
         """Test integration with complex Arrow data types."""
+        import datetime
+        
         # Create table with various data types
         complex_data = {
             'int_col': [1, 2, 3],
             'float_col': [1.1, 2.2, 3.3],
             'string_col': ['a', 'b', 'c'],
             'bool_col': [True, False, True],
-            'date_col': pa.array(['2024-01-01', '2024-01-02', '2024-01-03'], type=pa.date32())
+            'date_col': pa.array([
+                datetime.date(2024, 1, 1),
+                datetime.date(2024, 1, 2), 
+                datetime.date(2024, 1, 3)
+            ], type=pa.date32())
         }
         
         complex_table = pa.table(complex_data)
         table_name = "complex_types_integration"
+        transformed_table_name = f"my_ducklake.main.{table_name}"  # What FlightSQL server creates
         
         # Upload via Flight
         descriptor = pf.FlightDescriptor.for_path(table_name.encode('utf-8'))
@@ -272,12 +288,12 @@ class TestRawFlightDoPutIntegration:
         # Execute upload
         self.server._handle_file_upload_do_put(context, descriptor, reader, writer)
         
-        # Verify upload and query capability
-        row_count = self.backend.get_table_row_count(table_name)
+        # Verify upload and query capability (use transformed name)
+        row_count = self.backend.get_table_row_count(transformed_table_name)
         assert row_count == 3
         
-        # Test querying different data types
-        result = self.backend.execute_query(f"SELECT * FROM {table_name} WHERE bool_col = true")
+        # Test querying different data types (use transformed name)
+        result = self.backend.execute_query(f"SELECT * FROM {transformed_table_name} WHERE bool_col = true")
         true_rows = result.to_pylist()
         assert len(true_rows) == 2  # First and third rows
 
@@ -288,6 +304,7 @@ class TestRawFlightDoPutIntegration:
         
         for i in range(3):
             table_name = f"concurrent_table_{i}"
+            transformed_table_name = f"my_ducklake.main.{table_name}"  # What FlightSQL server creates
             test_data = pa.table({
                 'id': [i],
                 'value': [f'value_{i}'],
@@ -306,15 +323,15 @@ class TestRawFlightDoPutIntegration:
             
             # Execute upload
             self.server._handle_file_upload_do_put(context, descriptor, reader, writer)
-            tables_created.append(table_name)
+            tables_created.append((table_name, transformed_table_name))
         
-        # Verify all tables were created successfully
-        for table_name in tables_created:
-            count = self.backend.get_table_row_count(table_name)
+        # Verify all tables were created successfully (use transformed names)
+        for table_name, transformed_table_name in tables_created:
+            count = self.backend.get_table_row_count(transformed_table_name)
             assert count == 1
             
-            # Verify we can query each table
-            result = self.backend.execute_query(f"SELECT value FROM {table_name}")
+            # Verify we can query each table (use transformed name)
+            result = self.backend.execute_query(f"SELECT value FROM {transformed_table_name}")
             assert len(result.to_pylist()) == 1
 
     def test_backward_compatibility(self):
