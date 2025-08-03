@@ -413,6 +413,92 @@ class DuckDBBackend(DatabaseBackend):
                 # Last resort: return empty schema
                 return pa.schema([])
 
+    def _duckdb_type_to_arrow(self, duckdb_type: str) -> pa.DataType:
+        """Convert DuckDB type string to PyArrow DataType."""
+        # Handle common DuckDB types and convert to appropriate Arrow types
+        duckdb_type = duckdb_type.upper()
+        
+        # Handle parameterized types (e.g., VARCHAR(50), DECIMAL(10,2))
+        base_type = duckdb_type.split('(')[0].strip()
+        
+        type_mapping = {
+            # Integer types
+            'TINYINT': pa.int8(),
+            'SMALLINT': pa.int16(),
+            'INTEGER': pa.int32(),
+            'INT': pa.int32(),
+            'BIGINT': pa.int64(),
+            'UTINYINT': pa.uint8(),
+            'USMALLINT': pa.uint16(),
+            'UINTEGER': pa.uint32(),
+            'UBIGINT': pa.uint64(),
+            
+            # Floating point types
+            'REAL': pa.float32(),
+            'FLOAT': pa.float32(),
+            'DOUBLE': pa.float64(),
+            
+            # String types
+            'VARCHAR': pa.string(),
+            'TEXT': pa.string(),
+            'STRING': pa.string(),
+            'CHAR': pa.string(),
+            
+            # Boolean
+            'BOOLEAN': pa.bool_(),
+            'BOOL': pa.bool_(),
+            
+            # Date/Time types
+            'DATE': pa.date32(),
+            'TIME': pa.time64('us'),
+            'TIMESTAMP': pa.timestamp('us'),
+            'TIMESTAMPTZ': pa.timestamp('us', tz='UTC'),
+            'INTERVAL': pa.duration('us'),
+            
+            # Binary types
+            'BLOB': pa.binary(),
+            'BYTEA': pa.binary(),
+            
+            # UUID
+            'UUID': pa.string(),  # Arrow doesn't have native UUID, use string
+        }
+        
+        # Handle DECIMAL types specially
+        if base_type == 'DECIMAL' or base_type == 'NUMERIC':
+            # Extract precision and scale if present
+            if '(' in duckdb_type:
+                try:
+                    params = duckdb_type.split('(')[1].split(')')[0]
+                    if ',' in params:
+                        precision, scale = map(int, params.split(','))
+                        return pa.decimal128(precision, scale)
+                    else:
+                        precision = int(params)
+                        return pa.decimal128(precision, 0)
+                except (ValueError, IndexError):
+                    pass
+            return pa.decimal128(18, 3)  # Default precision and scale
+        
+        # Handle LIST types
+        if base_type == 'LIST' or duckdb_type.endswith('[]'):
+            # For now, return a generic list of strings
+            # This could be enhanced to parse the inner type
+            return pa.list_(pa.string())
+        
+        # Handle STRUCT types
+        if base_type == 'STRUCT':
+            # For now, return a generic struct
+            # This could be enhanced to parse the field types
+            return pa.struct([pa.field('field', pa.string())])
+        
+        # Handle MAP types
+        if base_type == 'MAP':
+            # For now, return a generic map
+            return pa.map_(pa.string(), pa.string())
+        
+        # Return mapped type or default to string
+        return type_mapping.get(base_type, pa.string())
+
     def get_catalogs(self) -> pa.Table:
         """Get available catalogs as an Arrow table."""
         try:
