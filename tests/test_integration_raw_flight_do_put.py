@@ -10,9 +10,9 @@ import pyarrow as pa
 import pyarrow.flight as pf
 from unittest.mock import Mock, MagicMock
 
-from mpzsql.flightsql.minimal import FlightSQLMinimalServer
-from mpzsql.backends.duckdb_backend import DuckDBBackend
-from mpzsql.config import ServerConfig
+from src.mpzsql.flightsql.minimal import MinimalFlightSQLServer
+from src.mpzsql.backends.duckdb_backend import DuckDBBackend
+from src.mpzsql.config import ServerConfig
 
 
 class TestRawFlightDoPutIntegration:
@@ -20,14 +20,23 @@ class TestRawFlightDoPutIntegration:
 
     def setup_method(self):
         """Set up test fixtures with real backend."""
-        self.config = Mock(spec=ServerConfig)
-        self.config.database = ":memory:"
-        self.config.read_only = False
-        self.config.print_queries = True
+        self.config = ServerConfig(
+            database=":memory:",
+            read_only=False,
+            print_queries=True,
+            secret_key="test_secret",
+            username="test_user",
+            password="test_pass"
+        )
+        self.location = pf.Location.for_grpc_tcp("localhost", 0)
         
         # Use real DuckDB backend for integration testing
         self.backend = DuckDBBackend(self.config)
-        self.server = FlightSQLMinimalServer(self.backend)
+        self.server = MinimalFlightSQLServer(
+            backend=self.backend,
+            config=self.config,
+            location=self.location
+        )
 
     def teardown_method(self):
         """Clean up after tests."""
@@ -313,17 +322,26 @@ class TestRawFlightDoPutIntegration:
         # This test ensures that adding raw Flight support didn't break FlightSQL
         
         # Test FlightSQL query (CMD descriptor)
-        from mpzsql.flightsql.protocol import FlightSQLProtobuf
+        from google.protobuf import any_pb2
+        from src.mpzsql.flightsql.protobuf import CommandStatementQuery, FlightSQLProtobuf
         
         # Create a test table first
         self.backend.execute_sql("CREATE TABLE flightsql_test (id INTEGER, name VARCHAR)")
         self.backend.execute_sql("INSERT INTO flightsql_test VALUES (1, 'test')")
         
         # Test FlightSQL query command
-        command = FlightSQLProtobuf.CommandStatementQuery()
+        command = CommandStatementQuery()
         command.query = "SELECT * FROM flightsql_test"
         
-        descriptor = pf.FlightDescriptor.for_command(command.SerializeToString())
+        # Create Any message wrapper
+        any_msg = any_pb2.Any()
+        any_msg.type_url = FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL
+        
+        # Encode query and set value
+        query_encoded = command.query.encode('utf-8')
+        any_msg.value = bytes([0x0A]) + bytes([len(query_encoded)]) + query_encoded
+        
+        descriptor = pf.FlightDescriptor.for_command(any_msg.SerializeToString())
         context = Mock(spec=pf.ServerCallContext)
         
         # This should work via the existing FlightSQL path

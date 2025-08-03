@@ -7,6 +7,7 @@ including query execution, schema introspection, and metadata operations.
 
 import logging
 import os
+import uuid
 from typing import List, Optional, Tuple
 
 import duckdb
@@ -1099,7 +1100,6 @@ class DuckDBBackend(DatabaseBackend):
             # DIRECT ARROW → DUCKDB TABLE CREATION!
             # DuckDB can directly create tables from PyArrow tables using register()
             # Step 1: Register the Arrow table as a temporary view with unique name
-            import uuid
             temp_table_name = f"temp_arrow_table_{uuid.uuid4().hex[:8]}"
             self.connection.register(temp_table_name, arrow_table)
             
@@ -1153,7 +1153,6 @@ class DuckDBBackend(DatabaseBackend):
             empty_table = pa.table(empty_columns, schema=arrow_schema)
             
             # Step 2: Register and create table using same pattern as batch mode
-            import uuid
             temp_table_name = f"temp_schema_table_{uuid.uuid4().hex[:8]}"
             self.connection.register(temp_table_name, empty_table)
             self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}")
@@ -1189,7 +1188,6 @@ class DuckDBBackend(DatabaseBackend):
         try:
             # INSERT INTO existing table FROM Arrow data
             # Step 1: Register the Arrow table temporarily with unique name
-            import uuid
             temp_table_name = f"temp_append_table_{uuid.uuid4().hex[:8]}"
             self.connection.register(temp_table_name, arrow_table)
             
