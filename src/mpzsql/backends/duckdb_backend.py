@@ -1076,6 +1076,68 @@ class DuckDBBackend(DatabaseBackend):
     # ===== RAW FLIGHT DO_PUT SUPPORT METHODS =====
     # Added for raw Flight do_put functionality to create DuckDB tables directly from Arrow data
     
+    def _ensure_catalog_exists(self, table_name: str) -> None:
+        """Ensure that the catalog exists for a qualified table name.
+        
+        For table names like 'my_ducklake.main.table_name', ensure the 'my_ducklake' catalog exists.
+        If it doesn't exist, create it as an in-memory catalog for testing.
+        """
+        if '.' in table_name:
+            parts = table_name.split('.')
+            if len(parts) >= 3:  # catalog.schema.table format
+                catalog_name = parts[0]
+                
+                try:
+                    # Check if catalog exists by trying to query it
+                    self.connection.execute(f"SELECT * FROM {catalog_name}.information_schema.schemata LIMIT 0")
+                    duckdb_log.info(f"_ensure_catalog_exists: Catalog '{catalog_name}' already exists")
+                except Exception:
+                    # Catalog doesn't exist, create it as in-memory
+                    try:
+                        self.connection.execute(f"CREATE DATABASE {catalog_name}")
+                        duckdb_log.info(f"_ensure_catalog_exists: Created in-memory catalog '{catalog_name}'")
+                        duckdb_logger.info("Created in-memory catalog for testing", catalog_name=catalog_name)
+                    except Exception as e:
+                        # If CREATE DATABASE fails, try ATTACH as in-memory
+                        try:
+                            self.connection.execute(f"ATTACH ':memory:' AS {catalog_name}")
+                            duckdb_log.info(f"_ensure_catalog_exists: Attached in-memory catalog '{catalog_name}'")
+                            duckdb_logger.info("Attached in-memory catalog for testing", catalog_name=catalog_name)
+                        except Exception as e2:
+                            duckdb_log.warning(f"_ensure_catalog_exists: Could not create catalog '{catalog_name}': {e}, {e2}")
+                            # Continue anyway - DuckDB might handle it automatically
+
+    def _ensure_catalog_exists(self, table_name: str) -> None:
+        """Ensure that the catalog exists for a qualified table name.
+        
+        For table names like 'my_ducklake.main.table_name', ensure the 'my_ducklake' catalog exists.
+        If it doesn't exist, create it as an in-memory catalog for testing.
+        """
+        if '.' in table_name:
+            parts = table_name.split('.')
+            if len(parts) >= 3:  # catalog.schema.table format
+                catalog_name = parts[0]
+                
+                try:
+                    # Check if catalog exists by trying to query it
+                    self.connection.execute(f"SELECT * FROM {catalog_name}.information_schema.schemata LIMIT 0")
+                    duckdb_log.info(f"_ensure_catalog_exists: Catalog '{catalog_name}' already exists")
+                except Exception:
+                    # Catalog doesn't exist, create it as in-memory
+                    try:
+                        self.connection.execute(f"CREATE DATABASE {catalog_name}")
+                        duckdb_log.info(f"_ensure_catalog_exists: Created in-memory catalog '{catalog_name}'")
+                        duckdb_logger.info("Created in-memory catalog for testing", catalog_name=catalog_name)
+                    except Exception as e:
+                        # If CREATE DATABASE fails, try ATTACH as in-memory
+                        try:
+                            self.connection.execute(f"ATTACH ':memory:' AS {catalog_name}")
+                            duckdb_log.info(f"_ensure_catalog_exists: Attached in-memory catalog '{catalog_name}'")
+                            duckdb_logger.info("Attached in-memory catalog for testing", catalog_name=catalog_name)
+                        except Exception as e2:
+                            duckdb_log.warning(f"_ensure_catalog_exists: Could not create catalog '{catalog_name}': {e}, {e2}")
+                            # Continue anyway - DuckDB might handle it automatically
+    
     def create_table_from_arrow(self, table_name: str, arrow_table: pa.Table) -> None:
         """Create a DuckDB table directly from PyArrow Table data (batch mode)
         
@@ -1097,6 +1159,9 @@ class DuckDBBackend(DatabaseBackend):
         duckdb_log.info(f"create_table_from_arrow: table={table_name}, rows={len(arrow_table)}, cols={arrow_table.num_columns}")
         
         try:
+            # Ensure catalog exists if table name is qualified with a catalog
+            self._ensure_catalog_exists(table_name)
+            
             # DIRECT ARROW → DUCKDB TABLE CREATION!
             # DuckDB can directly create tables from PyArrow tables using register()
             # Step 1: Register the Arrow table as a temporary view with unique name
@@ -1141,6 +1206,9 @@ class DuckDBBackend(DatabaseBackend):
         duckdb_log.info(f"create_table_from_schema: table={table_name}, schema={arrow_schema}")
         
         try:
+            # Ensure catalog exists if table name is qualified with a catalog
+            self._ensure_catalog_exists(table_name)
+            
             # Create empty table with schema from Arrow Schema
             # Step 1: Create an empty Arrow table with the correct schema
             # Build empty column data for each field in the schema
@@ -1186,6 +1254,9 @@ class DuckDBBackend(DatabaseBackend):
         duckdb_log.info(f"append_table_from_arrow: table={table_name}, rows={len(arrow_table)}")
         
         try:
+            # Ensure catalog exists if table name is qualified with a catalog
+            self._ensure_catalog_exists(table_name)
+            
             # INSERT INTO existing table FROM Arrow data
             # Step 1: Register the Arrow table temporarily with unique name
             temp_table_name = f"temp_append_table_{uuid.uuid4().hex[:8]}"
@@ -1214,6 +1285,9 @@ class DuckDBBackend(DatabaseBackend):
     def get_table_schema(self, table_name: str) -> pa.Schema:
         """Get the PyArrow schema for the specified table."""
         try:
+            # Ensure catalog exists for qualified table names
+            self._ensure_catalog_exists(table_name)
+            
             # Query the table to get its schema
             result = self.connection.execute(f"SELECT * FROM {table_name} LIMIT 0").arrow()
             
@@ -1236,6 +1310,9 @@ class DuckDBBackend(DatabaseBackend):
     def get_table_row_count(self, table_name: str) -> int:
         """Get the number of rows in the specified table."""
         try:
+            # Ensure catalog exists for qualified table names
+            self._ensure_catalog_exists(table_name)
+            
             result = self.connection.execute(f"SELECT COUNT(*) as row_count FROM {table_name}").fetchone()
             row_count = result[0] if result else 0
             
