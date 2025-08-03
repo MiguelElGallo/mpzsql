@@ -1012,15 +1012,17 @@ class DuckDBBackend(DatabaseBackend):
         try:
             # DIRECT ARROW → DUCKDB TABLE CREATION!
             # DuckDB can directly create tables from PyArrow tables using register()
-            # Step 1: Register the Arrow table as a temporary view
-            self.connection.register("temp_arrow_table", arrow_table)
+            # Step 1: Register the Arrow table as a temporary view with unique name
+            import uuid
+            temp_table_name = f"temp_arrow_table_{uuid.uuid4().hex[:8]}"
+            self.connection.register(temp_table_name, arrow_table)
             
             # Step 2: Create the actual table from the registered view
             # This handles fully qualified names automatically (database.schema.table)
-            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM temp_arrow_table")
+            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}")
             
             # Step 3: Unregister the temporary view to clean up
-            self.connection.unregister("temp_arrow_table")
+            self.connection.unregister(temp_table_name)
             
             # Step 4: Verify the table was created successfully
             row_count = self.connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
@@ -1065,9 +1067,11 @@ class DuckDBBackend(DatabaseBackend):
             empty_table = pa.table(empty_columns, schema=arrow_schema)
             
             # Step 2: Register and create table using same pattern as batch mode
-            self.connection.register("temp_schema_table", empty_table)
-            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM temp_schema_table")
-            self.connection.unregister("temp_schema_table")
+            import uuid
+            temp_table_name = f"temp_schema_table_{uuid.uuid4().hex[:8]}"
+            self.connection.register(temp_table_name, empty_table)
+            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}")
+            self.connection.unregister(temp_table_name)
             
             duckdb_logger.info("Successfully created empty DuckDB table from schema",
                               table_name=table_name)
@@ -1098,14 +1102,16 @@ class DuckDBBackend(DatabaseBackend):
         
         try:
             # INSERT INTO existing table FROM Arrow data
-            # Step 1: Register the Arrow table temporarily
-            self.connection.register("temp_append_table", arrow_table)
+            # Step 1: Register the Arrow table temporarily with unique name
+            import uuid
+            temp_table_name = f"temp_append_table_{uuid.uuid4().hex[:8]}"
+            self.connection.register(temp_table_name, arrow_table)
             
             # Step 2: Insert from the registered table
-            self.connection.execute(f"INSERT INTO {table_name} SELECT * FROM temp_append_table")
+            self.connection.execute(f"INSERT INTO {table_name} SELECT * FROM {temp_table_name}")
             
             # Step 3: Clean up the temporary registration
-            self.connection.unregister("temp_append_table")
+            self.connection.unregister(temp_table_name)
             
             duckdb_logger.debug("Successfully appended Arrow data to DuckDB table",
                                table_name=table_name,
