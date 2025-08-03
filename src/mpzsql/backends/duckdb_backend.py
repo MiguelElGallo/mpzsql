@@ -985,3 +985,182 @@ class DuckDBBackend(DatabaseBackend):
                 "db_schema_name": []
             }, schema=schema)
             return self._convert_large_utf8_to_utf8(table)
+
+    # ===== RAW FLIGHT DO_PUT SUPPORT METHODS =====
+    # Added for raw Flight do_put functionality to create DuckDB tables directly from Arrow data
+    
+    def create_table_from_arrow(self, table_name: str, arrow_table: pa.Table) -> None:
+        """Create a DuckDB table directly from PyArrow Table data (batch mode)
+        
+        DuckDB will automatically handle fully qualified names like:
+        - "my_table" → main.main.my_table (default database.schema.table)
+        - "public.customers" → main.public.customers (database.schema.table) 
+        - "analytics.hr.employees" → analytics.hr.employees (database.schema.table)
+        
+        DuckDB automatically creates databases and schemas as needed!
+        """
+        
+        # EXTENSIVE LOGGING
+        duckdb_logger.info("Creating DuckDB table from Arrow data (batch mode)",
+                          table_name=table_name,
+                          rows=len(arrow_table),
+                          columns=arrow_table.num_columns,
+                          schema=str(arrow_table.schema))
+        
+        duckdb_log.info(f"create_table_from_arrow: table={table_name}, rows={len(arrow_table)}, cols={arrow_table.num_columns}")
+        
+        try:
+            # DIRECT ARROW → DUCKDB TABLE CREATION!
+            # DuckDB can directly create tables from PyArrow tables using register()
+            # Step 1: Register the Arrow table as a temporary view
+            self.connection.register("temp_arrow_table", arrow_table)
+            
+            # Step 2: Create the actual table from the registered view
+            # This handles fully qualified names automatically (database.schema.table)
+            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM temp_arrow_table")
+            
+            # Step 3: Unregister the temporary view to clean up
+            self.connection.unregister("temp_arrow_table")
+            
+            # Step 4: Verify the table was created successfully
+            row_count = self.connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            
+            duckdb_logger.info("Successfully created DuckDB table from Arrow data",
+                              table_name=table_name,
+                              final_rows=row_count)
+            
+            duckdb_log.info(f"create_table_from_arrow: SUCCESS - table={table_name} created with {len(arrow_table)} rows")
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to create DuckDB table from Arrow data",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"create_table_from_arrow: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def create_table_from_schema(self, table_name: str, arrow_schema: pa.Schema) -> None:
+        """Create an empty DuckDB table from PyArrow Schema (streaming mode - first chunk)
+        
+        DuckDB will automatically handle fully qualified names and create databases/schemas as needed.
+        """
+        
+        # EXTENSIVE LOGGING  
+        duckdb_logger.info("Creating empty DuckDB table from Arrow schema (streaming mode)",
+                          table_name=table_name,
+                          schema=str(arrow_schema))
+        
+        duckdb_log.info(f"create_table_from_schema: table={table_name}, schema={arrow_schema}")
+        
+        try:
+            # Create empty table with schema from Arrow Schema
+            # Step 1: Create an empty Arrow table with the correct schema
+            # Build empty column data for each field in the schema
+            empty_columns = {}
+            for field in arrow_schema:
+                # Create empty array of the correct type
+                empty_array = pa.array([], type=field.type)
+                empty_columns[field.name] = empty_array
+            
+            empty_table = pa.table(empty_columns, schema=arrow_schema)
+            
+            # Step 2: Register and create table using same pattern as batch mode
+            self.connection.register("temp_schema_table", empty_table)
+            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM temp_schema_table")
+            self.connection.unregister("temp_schema_table")
+            
+            duckdb_logger.info("Successfully created empty DuckDB table from schema",
+                              table_name=table_name)
+            
+            duckdb_log.info(f"create_table_from_schema: SUCCESS - empty table={table_name} created")
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to create empty DuckDB table from schema", 
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"create_table_from_schema: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def append_table_from_arrow(self, table_name: str, arrow_table: pa.Table) -> None:
+        """Append Arrow data to existing DuckDB table (streaming mode - subsequent chunks)
+        
+        Used in streaming mode to append each chunk to the existing table.
+        """
+        
+        # EXTENSIVE LOGGING
+        duckdb_logger.debug("Appending Arrow data to existing DuckDB table",
+                           table_name=table_name,
+                           rows=len(arrow_table),
+                           columns=arrow_table.num_columns)
+        
+        duckdb_log.info(f"append_table_from_arrow: table={table_name}, rows={len(arrow_table)}")
+        
+        try:
+            # INSERT INTO existing table FROM Arrow data
+            # Step 1: Register the Arrow table temporarily
+            self.connection.register("temp_append_table", arrow_table)
+            
+            # Step 2: Insert from the registered table
+            self.connection.execute(f"INSERT INTO {table_name} SELECT * FROM temp_append_table")
+            
+            # Step 3: Clean up the temporary registration
+            self.connection.unregister("temp_append_table")
+            
+            duckdb_logger.debug("Successfully appended Arrow data to DuckDB table",
+                               table_name=table_name,
+                               appended_rows=len(arrow_table))
+            
+            duckdb_log.info(f"append_table_from_arrow: SUCCESS - appended {len(arrow_table)} rows to table={table_name}")
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to append Arrow data to DuckDB table",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"append_table_from_arrow: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def get_table_schema(self, table_name: str) -> pa.Schema:
+        """Get the PyArrow schema for the specified table."""
+        try:
+            # Query the table to get its schema
+            result = self.connection.execute(f"SELECT * FROM {table_name} LIMIT 0").arrow()
+            
+            duckdb_logger.debug("Successfully retrieved table schema",
+                               table_name=table_name,
+                               schema_fields=len(result.schema))
+            
+            duckdb_log.info(f"get_table_schema: SUCCESS - table={table_name}, fields={len(result.schema)}")
+            
+            return result.schema
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to get table schema",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"get_table_schema: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def get_table_row_count(self, table_name: str) -> int:
+        """Get the number of rows in the specified table."""
+        try:
+            result = self.connection.execute(f"SELECT COUNT(*) as row_count FROM {table_name}").fetchone()
+            row_count = result[0] if result else 0
+            
+            duckdb_logger.debug("Successfully retrieved table row count",
+                               table_name=table_name,
+                               row_count=row_count)
+            
+            duckdb_log.info(f"get_table_row_count: SUCCESS - table={table_name}, rows={row_count}")
+            
+            return row_count
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to get table row count",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"get_table_row_count: ERROR - table={table_name}, error={e}")
+            raise
