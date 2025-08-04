@@ -7,6 +7,7 @@ including query execution, schema introspection, and metadata operations.
 
 import logging
 import os
+import uuid
 from typing import List, Optional, Tuple
 
 import duckdb
@@ -412,6 +413,92 @@ class DuckDBBackend(DatabaseBackend):
                 logger.error(f"Schema fallback failed: {e2}")
                 # Last resort: return empty schema
                 return pa.schema([])
+
+    def _duckdb_type_to_arrow(self, duckdb_type: str) -> pa.DataType:
+        """Convert DuckDB type string to PyArrow DataType."""
+        # Handle common DuckDB types and convert to appropriate Arrow types
+        duckdb_type = duckdb_type.upper()
+        
+        # Handle parameterized types (e.g., VARCHAR(50), DECIMAL(10,2))
+        base_type = duckdb_type.split('(')[0].strip()
+        
+        type_mapping = {
+            # Integer types
+            'TINYINT': pa.int8(),
+            'SMALLINT': pa.int16(),
+            'INTEGER': pa.int32(),
+            'INT': pa.int32(),
+            'BIGINT': pa.int64(),
+            'UTINYINT': pa.uint8(),
+            'USMALLINT': pa.uint16(),
+            'UINTEGER': pa.uint32(),
+            'UBIGINT': pa.uint64(),
+            
+            # Floating point types
+            'REAL': pa.float32(),
+            'FLOAT': pa.float32(),
+            'DOUBLE': pa.float64(),
+            
+            # String types
+            'VARCHAR': pa.string(),
+            'TEXT': pa.string(),
+            'STRING': pa.string(),
+            'CHAR': pa.string(),
+            
+            # Boolean
+            'BOOLEAN': pa.bool_(),
+            'BOOL': pa.bool_(),
+            
+            # Date/Time types
+            'DATE': pa.date32(),
+            'TIME': pa.time64('us'),
+            'TIMESTAMP': pa.timestamp('us'),
+            'TIMESTAMPTZ': pa.timestamp('us', tz='UTC'),
+            'INTERVAL': pa.duration('us'),
+            
+            # Binary types
+            'BLOB': pa.binary(),
+            'BYTEA': pa.binary(),
+            
+            # UUID
+            'UUID': pa.string(),  # Arrow doesn't have native UUID, use string
+        }
+        
+        # Handle DECIMAL types specially
+        if base_type == 'DECIMAL' or base_type == 'NUMERIC':
+            # Extract precision and scale if present
+            if '(' in duckdb_type:
+                try:
+                    params = duckdb_type.split('(')[1].split(')')[0]
+                    if ',' in params:
+                        precision, scale = map(int, params.split(','))
+                        return pa.decimal128(precision, scale)
+                    else:
+                        precision = int(params)
+                        return pa.decimal128(precision, 0)
+                except (ValueError, IndexError):
+                    pass
+            return pa.decimal128(18, 3)  # Default precision and scale
+        
+        # Handle LIST types
+        if base_type == 'LIST' or duckdb_type.endswith('[]'):
+            # For now, return a generic list of strings
+            # This could be enhanced to parse the inner type
+            return pa.list_(pa.string())
+        
+        # Handle STRUCT types
+        if base_type == 'STRUCT':
+            # For now, return a generic struct
+            # This could be enhanced to parse the field types
+            return pa.struct([pa.field('field', pa.string())])
+        
+        # Handle MAP types
+        if base_type == 'MAP':
+            # For now, return a generic map
+            return pa.map_(pa.string(), pa.string())
+        
+        # Return mapped type or default to string
+        return type_mapping.get(base_type, pa.string())
 
     def get_catalogs(self) -> pa.Table:
         """Get available catalogs as an Arrow table."""
@@ -985,3 +1072,262 @@ class DuckDBBackend(DatabaseBackend):
                 "db_schema_name": []
             }, schema=schema)
             return self._convert_large_utf8_to_utf8(table)
+
+    # ===== RAW FLIGHT DO_PUT SUPPORT METHODS =====
+    # Added for raw Flight do_put functionality to create DuckDB tables directly from Arrow data
+    
+    def _ensure_catalog_exists(self, table_name: str) -> None:
+        """Ensure that the catalog exists for a qualified table name.
+        
+        For table names like 'my_ducklake.main.table_name', ensure the 'my_ducklake' catalog exists.
+        If it doesn't exist, create it as an in-memory catalog for testing.
+        """
+        if '.' in table_name:
+            parts = table_name.split('.')
+            if len(parts) >= 3:  # catalog.schema.table format
+                catalog_name = parts[0]
+                
+                try:
+                    # Check if catalog exists by trying to query it
+                    self.connection.execute(f"SELECT * FROM {catalog_name}.information_schema.schemata LIMIT 0")
+                    duckdb_log.info(f"_ensure_catalog_exists: Catalog '{catalog_name}' already exists")
+                except Exception:
+                    # Catalog doesn't exist, create it as in-memory
+                    try:
+                        self.connection.execute(f"CREATE DATABASE {catalog_name}")
+                        duckdb_log.info(f"_ensure_catalog_exists: Created in-memory catalog '{catalog_name}'")
+                        duckdb_logger.info("Created in-memory catalog for testing", catalog_name=catalog_name)
+                    except Exception as e:
+                        # If CREATE DATABASE fails, try ATTACH as in-memory
+                        try:
+                            self.connection.execute(f"ATTACH ':memory:' AS {catalog_name}")
+                            duckdb_log.info(f"_ensure_catalog_exists: Attached in-memory catalog '{catalog_name}'")
+                            duckdb_logger.info("Attached in-memory catalog for testing", catalog_name=catalog_name)
+                        except Exception as e2:
+                            duckdb_log.warning(f"_ensure_catalog_exists: Could not create catalog '{catalog_name}': {e}, {e2}")
+                            # Continue anyway - DuckDB might handle it automatically
+
+    def _ensure_catalog_exists(self, table_name: str) -> None:
+        """Ensure that the catalog exists for a qualified table name.
+        
+        For table names like 'my_ducklake.main.table_name', ensure the 'my_ducklake' catalog exists.
+        If it doesn't exist, create it as an in-memory catalog for testing.
+        """
+        if '.' in table_name:
+            parts = table_name.split('.')
+            if len(parts) >= 3:  # catalog.schema.table format
+                catalog_name = parts[0]
+                
+                try:
+                    # Check if catalog exists by trying to query it
+                    self.connection.execute(f"SELECT * FROM {catalog_name}.information_schema.schemata LIMIT 0")
+                    duckdb_log.info(f"_ensure_catalog_exists: Catalog '{catalog_name}' already exists")
+                except Exception:
+                    # Catalog doesn't exist, create it as in-memory
+                    try:
+                        self.connection.execute(f"CREATE DATABASE {catalog_name}")
+                        duckdb_log.info(f"_ensure_catalog_exists: Created in-memory catalog '{catalog_name}'")
+                        duckdb_logger.info("Created in-memory catalog for testing", catalog_name=catalog_name)
+                    except Exception as e:
+                        # If CREATE DATABASE fails, try ATTACH as in-memory
+                        try:
+                            self.connection.execute(f"ATTACH ':memory:' AS {catalog_name}")
+                            duckdb_log.info(f"_ensure_catalog_exists: Attached in-memory catalog '{catalog_name}'")
+                            duckdb_logger.info("Attached in-memory catalog for testing", catalog_name=catalog_name)
+                        except Exception as e2:
+                            duckdb_log.warning(f"_ensure_catalog_exists: Could not create catalog '{catalog_name}': {e}, {e2}")
+                            # Continue anyway - DuckDB might handle it automatically
+    
+    def create_table_from_arrow(self, table_name: str, arrow_table: pa.Table) -> None:
+        """Create a DuckDB table directly from PyArrow Table data (batch mode)
+        
+        DuckDB will automatically handle fully qualified names like:
+        - "my_table" → main.main.my_table (default database.schema.table)
+        - "public.customers" → main.public.customers (database.schema.table) 
+        - "analytics.hr.employees" → analytics.hr.employees (database.schema.table)
+        
+        DuckDB automatically creates databases and schemas as needed!
+        """
+        
+        # EXTENSIVE LOGGING
+        duckdb_logger.info("Creating DuckDB table from Arrow data (batch mode)",
+                          table_name=table_name,
+                          rows=len(arrow_table),
+                          columns=arrow_table.num_columns,
+                          schema=str(arrow_table.schema))
+        
+        duckdb_log.info(f"create_table_from_arrow: table={table_name}, rows={len(arrow_table)}, cols={arrow_table.num_columns}")
+        
+        try:
+            # Ensure catalog exists if table name is qualified with a catalog
+            self._ensure_catalog_exists(table_name)
+            
+            # DIRECT ARROW → DUCKDB TABLE CREATION!
+            # DuckDB can directly create tables from PyArrow tables using register()
+            # Step 1: Register the Arrow table as a temporary view with unique name
+            temp_table_name = f"temp_arrow_table_{uuid.uuid4().hex[:8]}"
+            self.connection.register(temp_table_name, arrow_table)
+            
+            # Step 2: Create the actual table from the registered view
+            # This handles fully qualified names automatically (database.schema.table)
+            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}")
+            
+            # Step 3: Unregister the temporary view to clean up
+            self.connection.unregister(temp_table_name)
+            
+            # Step 4: Verify the table was created successfully
+            row_count = self.connection.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            
+            duckdb_logger.info("Successfully created DuckDB table from Arrow data",
+                              table_name=table_name,
+                              final_rows=row_count)
+            
+            duckdb_log.info(f"create_table_from_arrow: SUCCESS - table={table_name} created with {len(arrow_table)} rows")
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to create DuckDB table from Arrow data",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"create_table_from_arrow: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def create_table_from_schema(self, table_name: str, arrow_schema: pa.Schema) -> None:
+        """Create an empty DuckDB table from PyArrow Schema (streaming mode - first chunk)
+        
+        DuckDB will automatically handle fully qualified names and create databases/schemas as needed.
+        """
+        
+        # EXTENSIVE LOGGING  
+        duckdb_logger.info("Creating empty DuckDB table from Arrow schema (streaming mode)",
+                          table_name=table_name,
+                          schema=str(arrow_schema))
+        
+        duckdb_log.info(f"create_table_from_schema: table={table_name}, schema={arrow_schema}")
+        
+        try:
+            # Ensure catalog exists if table name is qualified with a catalog
+            self._ensure_catalog_exists(table_name)
+            
+            # Create empty table with schema from Arrow Schema
+            # Step 1: Create an empty Arrow table with the correct schema
+            # Build empty column data for each field in the schema
+            empty_columns = {}
+            for field in arrow_schema:
+                # Create empty array of the correct type
+                empty_array = pa.array([], type=field.type)
+                empty_columns[field.name] = empty_array
+            
+            empty_table = pa.table(empty_columns, schema=arrow_schema)
+            
+            # Step 2: Register and create table using same pattern as batch mode
+            temp_table_name = f"temp_schema_table_{uuid.uuid4().hex[:8]}"
+            self.connection.register(temp_table_name, empty_table)
+            self.connection.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}")
+            self.connection.unregister(temp_table_name)
+            
+            duckdb_logger.info("Successfully created empty DuckDB table from schema",
+                              table_name=table_name)
+            
+            duckdb_log.info(f"create_table_from_schema: SUCCESS - empty table={table_name} created")
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to create empty DuckDB table from schema", 
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"create_table_from_schema: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def append_table_from_arrow(self, table_name: str, arrow_table: pa.Table) -> None:
+        """Append Arrow data to existing DuckDB table (streaming mode - subsequent chunks)
+        
+        Used in streaming mode to append each chunk to the existing table.
+        """
+        
+        # EXTENSIVE LOGGING
+        duckdb_logger.debug("Appending Arrow data to existing DuckDB table",
+                           table_name=table_name,
+                           rows=len(arrow_table),
+                           columns=arrow_table.num_columns)
+        
+        duckdb_log.info(f"append_table_from_arrow: table={table_name}, rows={len(arrow_table)}")
+        
+        try:
+            # Ensure catalog exists if table name is qualified with a catalog
+            self._ensure_catalog_exists(table_name)
+            
+            # INSERT INTO existing table FROM Arrow data
+            # Step 1: Register the Arrow table temporarily with unique name
+            temp_table_name = f"temp_append_table_{uuid.uuid4().hex[:8]}"
+            self.connection.register(temp_table_name, arrow_table)
+            
+            # Step 2: Insert from the registered table
+            self.connection.execute(f"INSERT INTO {table_name} SELECT * FROM {temp_table_name}")
+            
+            # Step 3: Clean up the temporary registration
+            self.connection.unregister(temp_table_name)
+            
+            duckdb_logger.debug("Successfully appended Arrow data to DuckDB table",
+                               table_name=table_name,
+                               appended_rows=len(arrow_table))
+            
+            duckdb_log.info(f"append_table_from_arrow: SUCCESS - appended {len(arrow_table)} rows to table={table_name}")
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to append Arrow data to DuckDB table",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"append_table_from_arrow: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def get_table_schema(self, table_name: str) -> pa.Schema:
+        """Get the PyArrow schema for the specified table."""
+        try:
+            # Ensure catalog exists for qualified table names
+            self._ensure_catalog_exists(table_name)
+            
+            # Query the table to get its schema
+            result = self.connection.execute(f"SELECT * FROM {table_name} LIMIT 0").arrow()
+            
+            duckdb_logger.debug("Successfully retrieved table schema",
+                               table_name=table_name,
+                               schema_fields=len(result.schema))
+            
+            duckdb_log.info(f"get_table_schema: SUCCESS - table={table_name}, fields={len(result.schema)}")
+            
+            return result.schema
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to get table schema",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"get_table_schema: ERROR - table={table_name}, error={e}")
+            raise
+    
+    def get_table_row_count(self, table_name: str) -> int:
+        """Get the number of rows in the specified table."""
+        try:
+            # Ensure catalog exists for qualified table names
+            self._ensure_catalog_exists(table_name)
+            
+            result = self.connection.execute(f"SELECT COUNT(*) as row_count FROM {table_name}").fetchone()
+            row_count = result[0] if result else 0
+            
+            duckdb_logger.debug("Successfully retrieved table row count",
+                               table_name=table_name,
+                               row_count=row_count)
+            
+            duckdb_log.info(f"get_table_row_count: SUCCESS - table={table_name}, rows={row_count}")
+            
+            return row_count
+            
+        except Exception as e:
+            duckdb_logger.error("Failed to get table row count",
+                               table_name=table_name,
+                               error=str(e))
+            
+            duckdb_log.error(f"get_table_row_count: ERROR - table={table_name}, error={e}")
+            raise
