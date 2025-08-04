@@ -12,6 +12,7 @@ by providing proper FlightSQL method implementations.
 import logging
 import threading
 import time
+import traceback
 import uuid
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -442,8 +443,202 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             f"{descriptor.descriptor_type}"
         )
 
-        if descriptor.descriptor_type != pf.DescriptorType.CMD:
-            raise NotImplementedError("Only CMD descriptors are supported.")
+        # Handle both CMD (FlightSQL) and PATH (raw Flight) descriptors
+        if descriptor.descriptor_type == pf.DescriptorType.CMD:
+            # Existing FlightSQL command handling
+            return self._handle_flightsql_get_flight_info(context, descriptor)
+        elif descriptor.descriptor_type == pf.DescriptorType.PATH:
+            # New: Handle raw Flight path descriptors for table info
+            return self._handle_path_get_flight_info(context, descriptor)
+        else:
+            raise NotImplementedError(f"Unsupported descriptor type: {descriptor.descriptor_type}")
+
+    def _handle_flightsql_get_flight_info(self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor) -> pf.FlightInfo:
+        """Handle FlightSQL get_flight_info - EXISTING FUNCTIONALITY UNCHANGED"""
+        command_bytes = descriptor.command
+        logger.info(f"GetFlightInfo command length: {len(command_bytes)} bytes")
+        print(f"SERVER: GetFlightInfo command length: {len(command_bytes)} bytes")
+
+        routing_log.info(f"Command bytes: {command_bytes.hex()}")
+
+        any_command = parse_any_command(command_bytes)
+        if not any_command:
+            raise ValueError("Failed to parse command from descriptor.")
+
+        command_type_url = any_command.type_url
+        routing_log.info(f"Command type URL: {command_type_url}")
+        protobuf_log.info(f"Parsing command with type_url: {command_type_url}")
+        protobuf_log.info(f"Command value bytes: {any_command.value.hex()}")
+        logger.info(f"Successfully parsed command with type URL: {command_type_url}")
+        print(f"SERVER: Successfully parsed command with type URL: {command_type_url}")
+        print("SERVER: DEBUG - About to handle command type")
+
+        # Add immediate debugging for the crash
+        try:
+            print("SERVER: DEBUG - Inside try block for command type handling")
+            print(f"SERVER: DEBUG - Command type URL is: {repr(command_type_url)}")
+
+            # Check for prepared statement query specifically to prevent crash
+            if "CommandPreparedStatementQuery" in command_type_url:
+                print("SERVER: DEBUG - Detected CommandPreparedStatementQuery")
+                # Handle the prepared statement query with defensive programming
+                try:
+                    command = self._parse_prepared_statement_query(any_command)
+                    return self._get_flight_info_prepared_statement(descriptor, command)
+                except Exception as ps_e:
+                    print(
+                        f"SERVER: ERROR - Exception in prepared statement handling: {ps_e}"
+                    )
+
+                    traceback.print_exc()
+                    # Return error schema instead of crashing
+                    error_schema = pa.schema([pa.field("error", pa.string())])
+                    return self._get_flight_info_for_command(descriptor, error_schema)
+
+        except Exception as debug_e:
+            print(f"SERVER: CRITICAL - Exception in debug code: {debug_e}")
+
+            traceback.print_exc()
+            # Return error schema to prevent complete crash
+            error_schema = pa.schema([pa.field("error", pa.string())])
+            return self._get_flight_info_for_command(descriptor, error_schema)
+
+        if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL:
+            print("SERVER: DEBUG - Handling COMMAND_STATEMENT_QUERY")
+            command = self._parse_statement_query(any_command)
+            return self._get_flight_info_statement(descriptor, command)
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+            print("SERVER: DEBUG - Handling COMMAND_GET_CATALOGS")
+            command = CommandGetCatalogs()
+            return self._get_flight_info_catalogs(descriptor, command)
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+            print("SERVER: DEBUG - Handling COMMAND_GET_DB_SCHEMAS")
+            command = self._parse_get_db_schemas(any_command)
+            return self._get_flight_info_schemas(descriptor, command)
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+            print("SERVER: DEBUG - Handling COMMAND_GET_TABLES")
+            command = self._parse_get_tables(any_command)
+            return self._get_flight_info_tables(descriptor, command)
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+            command = CommandGetTableTypes()
+            return self._get_flight_info_table_types(descriptor, command)
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_COLUMNS_TYPE_URL:
+            print("SERVER: DEBUG - Handling COMMAND_GET_COLUMNS")
+            command = self._parse_get_columns(any_command)
+            return self._get_flight_info_columns(descriptor, command)
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+            command = self._parse_get_sql_info(any_command)
+            return self._get_flight_info_sql_info(descriptor, command)
+        elif (
+            command_type_url
+            == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
+        ):
+            print(
+                "SERVER: DEBUG - Handling COMMAND_PREPARED_STATEMENT_QUERY in get_flight_info"
+            )
+            try:
+                print("SERVER: DEBUG - About to parse prepared statement query")
+                command = self._parse_prepared_statement_query(any_command)
+                print("SERVER: DEBUG - Successfully parsed prepared statement query")
+                print("SERVER: DEBUG - About to get flight info for prepared statement")
+                result = self._get_flight_info_prepared_statement(descriptor, command)
+                print(
+                    "SERVER: DEBUG - Successfully got flight info for prepared statement"
+                )
+                return result
+            except Exception as e:
+                print(
+                    f"SERVER: ERROR - Exception in get_flight_info for prepared statement: {e}"
+                )
+                actions_log.info(
+                    f"DEBUG get_flight_info: Exception in prepared statement: {e}"
+                )
+                actions_handler.flush()
+
+                traceback.print_exc()
+                # Return a safe fallback response instead of crashing
+                try:
+                    schema = pa.schema([pa.field("error", pa.string())])
+                    safe_ticket = f"ERROR: {str(e)}".encode("utf-8")
+                    # Use the advertised location for the endpoint
+                    endpoint = pf.FlightEndpoint(
+                        ticket=pf.Ticket(safe_ticket),
+                        locations=[self.advertised_location],
+                    )
+                    return pf.FlightInfo(
+                        schema=schema,
+                        descriptor=descriptor,
+                        endpoints=[endpoint],
+                        total_records=0,
+                        total_bytes=0,
+                    )
+                except Exception as fallback_error:
+                    print(
+                        f"SERVER: CRITICAL ERROR - Even fallback failed: {fallback_error}"
+                    )
+                    raise e  # Re-raise the original exception
+        else:
+            raise NotImplementedError(f"Unsupported command type: {command_type_url}")
+
+    def _handle_path_get_flight_info(self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor) -> pf.FlightInfo:
+        """Handle raw Flight path descriptors for table info retrieval"""
+        # Extract table name from path (same logic as in do_put)
+        raw_table_name = descriptor.path[0] if descriptor.path else b"unknown_table"
+        if isinstance(raw_table_name, bytes):
+            raw_table_name = raw_table_name.decode('utf-8')
+        raw_table_name = raw_table_name.strip('/')
+        
+        # Apply same table naming logic as in do_put
+        if '.' not in raw_table_name:
+            table_name = f"my_ducklake.main.{raw_table_name}"
+        elif raw_table_name.startswith('my_ducklake.'):
+            table_name = raw_table_name
+        else:
+            parts = raw_table_name.split('.')
+            table_name = f"my_ducklake.main.{parts[-1]}"
+        
+        print(f"SERVER: PATH get_flight_info: '{raw_table_name}' → '{table_name}'")
+        
+        try:
+            # Get the schema of the existing table
+            schema = self.backend.get_table_schema(table_name)
+            
+            # Create a simple ticket with the table name
+            ticket_bytes = table_name.encode('utf-8')
+            endpoint = pf.FlightEndpoint(
+                ticket=pf.Ticket(ticket_bytes),
+                locations=[self.advertised_location]
+            )
+            
+            # Get table row count for metadata
+            try:
+                row_count = self.backend.get_table_row_count(table_name)
+            except Exception:
+                row_count = -1  # Unknown
+            
+            return pf.FlightInfo(
+                schema=schema,
+                descriptor=descriptor,
+                endpoints=[endpoint],
+                total_records=row_count,
+                total_bytes=-1  # Unknown
+            )
+        except Exception as e:
+            print(f"SERVER: Error getting table info for {table_name}: {e}")
+            # Return error schema
+            error_schema = pa.schema([pa.field("error", pa.string())])
+            ticket_bytes = f"ERROR: {str(e)}".encode('utf-8')
+            endpoint = pf.FlightEndpoint(
+                ticket=pf.Ticket(ticket_bytes),
+                locations=[self.advertised_location]
+            )
+            return pf.FlightInfo(
+                schema=error_schema,
+                descriptor=descriptor,
+                endpoints=[endpoint],
+                total_records=0,
+                total_bytes=0
+            )
 
         command_bytes = descriptor.command
         logger.info(f"GetFlightInfo command length: {len(command_bytes)} bytes")
@@ -766,7 +961,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         reader: pf.FlightStreamReader,
         writer: pf.FlightMetadataWriter,
     ):
-        """Handle DoPut for prepared statement updates or parameter binding."""
+        """Handle DoPut for both FlightSQL commands and raw Flight path uploads."""
         # Add comprehensive debug logging
         actions_log.info(f"=== do_put ENTRY === timestamp: {time.time()}")
         actions_log.info(
@@ -778,6 +973,25 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         print(
             f"SERVER: do_put called with descriptor type: {descriptor.descriptor_type}"
         )
+
+        # Route based on descriptor type
+        if descriptor.descriptor_type == pf.DescriptorType.CMD:
+            # EXISTING: All current FlightSQL functionality stays exactly the same
+            return self._handle_flightsql_do_put(context, descriptor, reader, writer)
+        elif descriptor.descriptor_type == pf.DescriptorType.PATH:
+            # NEW: Handle raw Flight file upload functionality
+            return self._handle_file_upload_do_put(context, descriptor, reader, writer)
+        else:
+            raise NotImplementedError(f"Unsupported descriptor type: {descriptor.descriptor_type}")
+
+    def _handle_flightsql_do_put(
+        self,
+        context: pf.ServerCallContext,
+        descriptor: pf.FlightDescriptor,
+        reader: pf.FlightStreamReader,
+        writer: pf.FlightMetadataWriter,
+    ):
+        """Handle FlightSQL DoPut commands - EXISTING FUNCTIONALITY UNCHANGED."""
         command_bytes = descriptor.command
         any_command = parse_any_command(command_bytes)
         if not any_command:
@@ -933,6 +1147,170 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             raise NotImplementedError(
                 f"Unsupported command type for DoPut: {command_type_url}"
             )
+
+    def _handle_file_upload_do_put(
+        self,
+        context: pf.ServerCallContext,
+        descriptor: pf.FlightDescriptor,
+        reader: pf.FlightStreamReader,
+        writer: pf.FlightMetadataWriter,
+    ):
+        """Handle raw Flight file upload via do_put with path descriptor - creates DuckDB tables directly (no files!)"""
+        
+        # EXTENSIVE LOGGING SETUP
+        from mpzsql.logfire_config import get_duckdb_logger
+        
+        duckdb_logger = get_duckdb_logger()
+        
+        # 1. TABLE NAME: Use the path directly as the table name, but ensure it's in my_ducklake.main schema
+        #    Examples:
+        #    - FlightDescriptor.for_path("users") → table name: "my_ducklake.main.users" (default schema)
+        #    - FlightDescriptor.for_path("simple_table") → table name: "my_ducklake.main.simple_table"
+        #    - FlightDescriptor.for_path("my_ducklake.main.customers") → keep as-is if already qualified
+        raw_table_name = descriptor.path[0] if descriptor.path else b"unknown_table"
+        # Decode bytes to string (Arrow Flight paths are bytes)
+        if isinstance(raw_table_name, bytes):
+            raw_table_name = raw_table_name.decode('utf-8')
+        raw_table_name = raw_table_name.strip('/')  # Remove any leading/trailing slashes
+        
+        # Ensure table is always created in my_ducklake.main schema
+        if '.' not in raw_table_name:
+            # Simple table name -> add my_ducklake.main prefix
+            table_name = f"my_ducklake.main.{raw_table_name}"
+        elif raw_table_name.startswith('my_ducklake.'):
+            # Already has my_ducklake prefix -> keep as-is
+            table_name = raw_table_name
+        else:
+            # Has some other prefix -> replace with my_ducklake.main
+            # e.g., "public.customers" -> "my_ducklake.main.customers"
+            # e.g., "analytics.public.employees" -> "my_ducklake.main.employees"
+            parts = raw_table_name.split('.')
+            table_name = f"my_ducklake.main.{parts[-1]}"  # Use just the table name part
+        
+        # DuckDB will handle database/schema creation automatically when we create the table!
+        # No need for manual parsing or schema creation - DuckDB is smart enough to handle it
+        
+        # Log the raw Flight do_put request with table name transformation
+        print(f"SERVER: Raw Flight do_put: '{raw_table_name}' → '{table_name}'")
+        duckdb_logger.info("Raw Flight do_put request received", 
+                          descriptor_type="PATH",
+                          raw_table_name=raw_table_name,
+                          final_table_name=table_name,
+                          path=descriptor.path)
+        
+        actions_log.info(f"RAW_FLIGHT_DO_PUT: raw_name={raw_table_name} -> final_table={table_name}, path={descriptor.path}")
+        routing_logger.info(f"ROUTE: do_put(PATH) -> file_upload_handler(table={table_name})")
+        
+        # 2. CHOOSE PROCESSING MODE: Batch vs Streaming
+        if self._should_use_streaming(reader, table_name):
+            routing_logger.info(f"ROUTE_MODE: streaming_upload(table={table_name})")
+            self._handle_streaming_upload(table_name, reader, writer)
+        else:
+            routing_logger.info(f"ROUTE_MODE: batch_upload(table={table_name})")
+            self._handle_batch_upload(table_name, reader, writer)
+
+    def _should_use_streaming(self, reader, table_name):
+        """Determine if we should use streaming based on table name or configuration"""
+        # You can implement logic here to decide when to stream
+        # Examples:
+        # - Large table indicators: table names ending with "_large", "_stream", "_big"
+        # - Configuration: self.config.get('force_streaming', False)
+        # - Memory constraints: check available memory
+        
+        return (table_name.endswith(('_large', '_stream', '_big')) or 
+                getattr(self.config, 'force_streaming', False))
+
+    def _handle_batch_upload(self, table_name, reader, writer):
+        """Handle upload by reading all data at once - creates DuckDB table directly"""
+        
+        # TRANSFORMATION: FlightStreamReader → PyArrow Table
+        arrow_table = reader.read_all()  # ← ONE LINE TRANSFORMATION!
+        
+        # EXTENSIVE LOGGING to all log files
+        from mpzsql.logfire_config import get_duckdb_logger
+        duckdb_logger = get_duckdb_logger()
+        
+        # Log to logfire
+        duckdb_logger.info("Raw Flight do_put batch upload started", 
+                          table_name=table_name, 
+                          rows=len(arrow_table),
+                          columns=arrow_table.num_columns,
+                          schema=str(arrow_table.schema))
+        
+        # Log to actions.log
+        actions_log.info(f"RAW_FLIGHT_BATCH_UPLOAD: table={table_name}, rows={len(arrow_table)}, cols={arrow_table.num_columns}")
+        
+        # Log to server_routing.log
+        routing_logger.info(f"ROUTE: raw_flight_do_put -> batch_upload(table={table_name})")
+        
+        # DIRECT DUCKDB TABLE CREATION (no file writing!)
+        # This is exactly what you want: duckdb.sql("CREATE TABLE my_table AS SELECT * FROM my_arrow")
+        self.backend.create_table_from_arrow(table_name, arrow_table)
+        
+        duckdb_logger.info("Raw Flight batch upload completed successfully", 
+                          table_name=table_name, 
+                          final_rows=len(arrow_table))
+        
+        # Acknowledge the upload
+        response_msg = f"Created table '{table_name}' with {len(arrow_table)} rows (batch mode)"
+        writer.write(pa.py_buffer(response_msg.encode()))
+
+    def _handle_streaming_upload(self, table_name, reader, writer):
+        """Handle upload by streaming data chunk by chunk - creates DuckDB table directly"""
+        
+        total_rows = 0
+        first_chunk = True
+        
+        # EXTENSIVE LOGGING to all log files
+        from mpzsql.logfire_config import get_duckdb_logger
+        duckdb_logger = get_duckdb_logger()
+        
+        # Log to logfire
+        duckdb_logger.info("Raw Flight do_put streaming upload started", 
+                          table_name=table_name)
+        
+        # Log to actions.log
+        actions_log.info(f"RAW_FLIGHT_STREAMING_UPLOAD: table={table_name} - starting")
+        
+        # Log to server_routing.log
+        routing_logger.info(f"ROUTE: raw_flight_do_put -> streaming_upload(table={table_name})")
+        
+        # STREAMING APPROACH: Process each chunk as it arrives
+        for chunk_num, chunk in enumerate(reader, 1):  # ← STREAMING: reader is iterable!
+            batch = chunk.data  # chunk.data is pa.RecordBatch
+            
+            if first_chunk:
+                # Create table with schema from first chunk (no file, just DuckDB table!)
+                self.backend.create_table_from_schema(table_name, batch.schema)
+                first_chunk = False
+                
+                duckdb_logger.info("Created table schema for streaming upload",
+                                  table_name=table_name,
+                                  schema=str(batch.schema))
+            
+            # Convert RecordBatch to Table and append directly to DuckDB
+            chunk_table = pa.Table.from_batches([batch])
+            self.backend.append_table_from_arrow(table_name, chunk_table)
+            
+            total_rows += batch.num_rows
+            
+            # Log each chunk
+            duckdb_logger.debug("Processed streaming chunk",
+                               table_name=table_name,
+                               chunk_number=chunk_num,
+                               chunk_rows=batch.num_rows,
+                               total_rows=total_rows)
+            
+            actions_log.info(f"RAW_FLIGHT_CHUNK: table={table_name}, chunk={chunk_num}, rows={batch.num_rows}, total={total_rows}")
+        
+        duckdb_logger.info("Raw Flight streaming upload completed successfully", 
+                          table_name=table_name, 
+                          total_chunks=chunk_num,
+                          final_rows=total_rows)
+        
+        # Acknowledge the upload
+        response_msg = f"Created table '{table_name}' with {total_rows} rows (streaming mode, {chunk_num} chunks)"
+        writer.write(pa.py_buffer(response_msg.encode()))
 
     def _create_prepared_statement(self, action_body: bytes) -> pf.Result:
         """Handle CreatePreparedStatement action (matching Examples implementation)."""
