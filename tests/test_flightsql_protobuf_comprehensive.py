@@ -129,7 +129,7 @@ class TestFlightSQLProtobufComprehensive:
         schema = self.protobuf.get_columns_schema()
         
         assert isinstance(schema, pa.Schema)
-        assert len(schema) == 20  # Standard FlightSQL columns schema has 20 fields
+        assert len(schema) == 20  # Our implementation includes 20 FlightSQL columns fields
         
         # Check some key fields
         field_names = schema.names
@@ -393,7 +393,7 @@ class TestFlightSQLProtobufComprehensive:
         command.catalog = "main"
         command.db_schema_filter_pattern = "public"
         command.table_name_filter_pattern = "users%"
-        command.table_types = ["TABLE", "VIEW"]
+        command.table_types.extend(["TABLE", "VIEW"])
         command.include_schema = True
         
         assert command.catalog == "main"
@@ -418,41 +418,41 @@ class TestFlightSQLProtobufComprehensive:
     def test_command_get_sql_info(self):
         """Test CommandGetSqlInfo class."""
         command = CommandGetSqlInfo()
-        command.info = [500, 501, 502]
+        command.info.extend([500, 501, 502])
         
-        assert command.info == [500, 501, 502]
+        assert list(command.info) == [500, 501, 502]
     
     def test_command_statement_query(self):
         """Test CommandStatementQuery class."""
         command = CommandStatementQuery()
         command.query = "SELECT * FROM test_table"
-        command.transaction_id = "tx_test"
+        command.transaction_id = b"tx_test"
         
         assert command.query == "SELECT * FROM test_table"
-        assert command.transaction_id == "tx_test"
+        assert command.transaction_id == b"tx_test"
     
     def test_command_statement_update(self):
         """Test CommandStatementUpdate class."""
         command = CommandStatementUpdate()
         command.query = "UPDATE test_table SET col1 = 'value'"
-        command.transaction_id = "tx_update"
+        command.transaction_id = b"tx_update"
         
         assert command.query == "UPDATE test_table SET col1 = 'value'"
-        assert command.transaction_id == "tx_update"
+        assert command.transaction_id == b"tx_update"
     
     def test_command_prepared_statement_query(self):
         """Test CommandPreparedStatementQuery class."""
         command = CommandPreparedStatementQuery()
-        command.prepared_statement_handle = "stmt_query_test"
+        command.prepared_statement_handle = b"stmt_query_test"
         
-        assert command.prepared_statement_handle == "stmt_query_test"
+        assert command.prepared_statement_handle == b"stmt_query_test"
     
     def test_command_prepared_statement_update(self):
         """Test CommandPreparedStatementUpdate class."""
         command = CommandPreparedStatementUpdate()
-        command.prepared_statement_handle = "stmt_update_test"
+        command.prepared_statement_handle = b"stmt_update_test"
         
-        assert command.prepared_statement_handle == "stmt_update_test"
+        assert command.prepared_statement_handle == b"stmt_update_test"
     
     # ===============================
     # Error Handling Tests
@@ -693,17 +693,17 @@ class TestActionClasses:
         """Test ActionCreatePreparedStatementRequest class."""
         request = ActionCreatePreparedStatementRequest()
         request.query = "SELECT * FROM users WHERE id = ?"
-        request.transaction_id = "tx_123"
+        request.transaction_id = b"tx_123"
         
         assert request.query == "SELECT * FROM users WHERE id = ?"
-        assert request.transaction_id == "tx_123"
+        assert request.transaction_id == b"tx_123"
     
     def test_action_close_prepared_statement_request(self):
         """Test ActionClosePreparedStatementRequest class."""
         request = ActionClosePreparedStatementRequest()
-        request.prepared_statement_handle = "stmt_456"
+        request.prepared_statement_handle = b"stmt_456"
         
-        assert request.prepared_statement_handle == "stmt_456"
+        assert request.prepared_statement_handle == b"stmt_456"
     
     def test_action_begin_transaction_request(self):
         """Test ActionBeginTransactionRequest class."""
@@ -713,9 +713,12 @@ class TestActionClasses:
     
     def test_action_end_transaction_request(self):
         """Test ActionEndTransactionRequest class."""
+        from mpzsql.flightsql.generated.FlightSql_pb2 import ActionEndTransactionRequest as GeneratedActionEndTransactionRequest
+        
         request = ActionEndTransactionRequest()
-        request.transaction_id = "tx_789"
-        request.action = "COMMIT"
+        request.transaction_id = b"tx_789"
+        # Use the correct enum access pattern from generated protobuf
+        request.action = GeneratedActionEndTransactionRequest.EndTransaction.END_TRANSACTION_COMMIT
         
         assert hasattr(request, '__dict__')
     

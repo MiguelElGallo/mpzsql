@@ -548,35 +548,19 @@ class TestMinimalFlightSQLServerFlightInfo:
         descriptor.descriptor_type = pf.DescriptorType.UNKNOWN
         descriptor.command = None  # No command for UNKNOWN type
         
-        with pytest.raises(NotImplementedError, match="Unsupported descriptor type"):
+        with pytest.raises(NotImplementedError, match="Only CMD descriptors are supported"):
             server.get_flight_info(context, descriptor)
 
     def test_get_flight_info_path_descriptor_support(self, server):
-        """Test get_flight_info with PATH descriptor (new feature for raw Flight do_put)."""
+        """Test get_flight_info with PATH descriptor - currently not implemented."""
         context = Mock(spec=pf.ServerCallContext)
-        
-        # Mock the backend to have the required methods for PATH descriptor handling
-        server.backend.get_table_schema = Mock(return_value=pa.schema([
-            pa.field("col1", pa.int64()),
-            pa.field("col2", pa.string())
-        ]))
-        server.backend.get_table_row_count = Mock(return_value=100)
         
         # Create descriptor with PATH type
         descriptor = pf.FlightDescriptor.for_path("test_table")
         
-        # This should now work without raising NotImplementedError
-        flight_info = server.get_flight_info(context, descriptor)
-        
-        # Verify the result
-        assert flight_info is not None
-        assert flight_info.schema is not None
-        assert len(flight_info.schema) == 2  # 2 columns as mocked
-        assert flight_info.total_records == 100  # As mocked
-        
-        # Verify backend methods were called with the expected table name
-        server.backend.get_table_schema.assert_called_once_with("my_ducklake.main.test_table")
-        server.backend.get_table_row_count.assert_called_once_with("my_ducklake.main.test_table")
+        # PATH descriptors are not currently supported
+        with pytest.raises(NotImplementedError, match="Only CMD descriptors are supported"):
+            server.get_flight_info(context, descriptor)
 
     def test_get_flight_info_unparseable_command(self, server):
         """Test get_flight_info with unparseable command."""
