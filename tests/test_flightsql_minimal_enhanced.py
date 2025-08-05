@@ -427,7 +427,7 @@ class TestFlightInfoGeneration:
         
         from src.mpzsql.flightsql.protobuf import CommandGetSqlInfo
         command = CommandGetSqlInfo()
-        command.info = [0, 1, 2]
+        command.info.extend([0, 1, 2])
         
         with patch('src.mpzsql.flightsql.protobuf.FlightSQLProtobuf.get_sql_info_schema') as mock_schema:
             test_schema = pa.schema([pa.field("info_name", pa.int32()), pa.field("value", pa.string())])
@@ -541,7 +541,7 @@ class TestBackendInteraction:
         command.catalog = "default"
         command.db_schema_filter_pattern = "main"
         command.table_name_filter_pattern = "%"
-        command.table_types = ["TABLE", "VIEW"]
+        command.table_types.extend(["TABLE", "VIEW"])
         command.include_schema = False
         
         result = server._do_get_tables(command)
@@ -597,7 +597,7 @@ class TestBackendInteraction:
         server.backend.get_sql_info.return_value = test_table
         
         command = CommandGetSqlInfo()
-        command.info = [0, 1, 2]
+        command.info.extend([0, 1, 2])
         
         result = server._do_get_sql_info(command)
         
@@ -633,14 +633,19 @@ class TestCommandParsing:
     def test_parse_prepared_statement_query(self, server):
         """Test _parse_prepared_statement_query method."""
         from src.mpzsql.flightsql.protobuf import CommandPreparedStatementQuery
+        from unittest.mock import patch
         
         mock_any = Mock()
         
-        with patch.object(CommandPreparedStatementQuery, 'Unpack') as mock_unpack:
+        # Mock the CommandPreparedStatementQuery constructor and Unpack method
+        with patch('src.mpzsql.flightsql.minimal.CommandPreparedStatementQuery') as mock_command_class:
+            mock_command_instance = Mock(spec=CommandPreparedStatementQuery)
+            mock_command_class.return_value = mock_command_instance
+            
             result = server._parse_prepared_statement_query(mock_any)
             
-            assert isinstance(result, CommandPreparedStatementQuery)
-            mock_unpack.assert_called_once_with(mock_any)
+            assert result == mock_command_instance
+            mock_command_instance.Unpack.assert_called_once_with(mock_any)
 
     def test_parse_get_sql_info(self, server):
         """Test _parse_get_sql_info method."""
