@@ -166,7 +166,7 @@ To migrate from self-signed to Let's Encrypt certificates:
    # Change from:
    --tls-cert ../../../certs/server.crt
    --tls-key ../../../certs/server.key
-   
+
    # To:
    --tls-cert ../../../certs/letsencrypt-fullchain.pem
    --tls-key ../../../certs/letsencrypt-server.key

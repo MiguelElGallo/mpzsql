@@ -8,7 +8,7 @@ MPZSQL is a Python implementation of an Apache Arrow FlightSQL server that suppo
 See these resources for more understanding:
 
 - [My initial idea](https://www.linkedin.com/pulse/thinking-ducklake-architecture-miguel-peredo-z%25C3%25BCrcher-lt5ff/?trackingId=2dHjs0mPQGi8Y3YKEIshhw%3D%3D)
-- A [demo of what you can achieve](https://www.youtube.com/watch?v=-Dx_qz7s-Ds) if you make it run. 
+- A [demo of what you can achieve](https://www.youtube.com/watch?v=-Dx_qz7s-Ds) if you make it run.
 
 ***Note*** The azure part showed in the video is not part of this repository, that you will need to figure by yourself, at least for now.
 
@@ -21,7 +21,7 @@ This software is in experimental state. I have not tested the security features 
 
 ## Minimum Configuration for Starting in DuckLake Mode
 
-### Azure Login 
+### Azure Login
 
 Make sure you are authenticated with Azure CLI:
 
@@ -29,17 +29,17 @@ Make sure you are authenticated with Azure CLI:
 az login
 ```
 
-The server relies on Azure Identity's [DefaultAzureCredential](https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme?view=azure-python#defaultazurecredential), so it will automatically pick up the credentials produced by `az login` when it runs.  
+The server relies on Azure Identity's [DefaultAzureCredential](https://learn.microsoft.com/en-us/python/api/overview/azure/identity-readme?view=azure-python#defaultazurecredential), so it will automatically pick up the credentials produced by `az login` when it runs.
 The Azure account you use (or you log in with) **must have data-plane permissions on the storage account** that hosts your DuckLake files:
 
 1. Storage Blob Data **Contributor** (if you need write access)
 
-You can grant those roles at the storage-account or container scope.  
+You can grant those roles at the storage-account or container scope.
 See Microsoft's documentation for details:
 
-* Assign data-plane roles –  
-  https://learn.microsoft.com/azure/storage/common/storage-auth-aad-rbac-portal  
-* Role definitions –  
+* Assign data-plane roles –
+  https://learn.microsoft.com/azure/storage/common/storage-auth-aad-rbac-portal
+* Role definitions –
   https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#storage-blob-data-roles
 
 Without the correct data-plane privileges, the server will fail when it tries to list, read, or write blobs.
@@ -201,7 +201,7 @@ MPZSQL can be configured using command-line switches or environment variables. E
 - For Azure AD authentication with PostgreSQL, set `--postgresql-password AZURE`
 - The `WEBSITE_HOSTNAME` environment variable is automatically set by Azure Web Apps
 
-## Starting the Server 
+## Starting the Server
 
 Check the help with:
 ```shell

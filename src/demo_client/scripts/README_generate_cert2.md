@@ -99,7 +99,7 @@ Best for: Automated certificate generation with Cloudflare-managed domains.
    ```bash
    # Ubuntu/Debian
    sudo apt install python3-certbot-dns-cloudflare
-   
+
    # macOS
    pip3 install certbot-dns-cloudflare
    ```
@@ -116,7 +116,7 @@ Best for: Automated certificate generation with Cloudflare-managed domains.
    dns_cloudflare_email = your-email@example.com
    dns_cloudflare_api_key = your-global-api-key
    ```
-   
+
    Or using API token (recommended):
    ```ini
    # Cloudflare API token
@@ -142,24 +142,24 @@ Best for: Domains managed in AWS Route53.
    ```bash
    # Ubuntu/Debian
    sudo apt install python3-certbot-dns-route53
-   
+
    # macOS
    pip3 install certbot-dns-route53
    ```
 
 2. Configure AWS credentials (choose one method):
-   
+
    **Method 1: AWS CLI**
    ```bash
    aws configure
    ```
-   
+
    **Method 2: Environment variables**
    ```bash
    export AWS_ACCESS_KEY_ID=your-access-key
    export AWS_SECRET_ACCESS_KEY=your-secret-key
    ```
-   
+
    **Method 3: IAM role** (if running on EC2)
 
 3. Generate certificate:

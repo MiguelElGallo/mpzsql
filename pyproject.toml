@@ -3,7 +3,7 @@ name = "mpzsql"
 version = "0.1.0"
 description = "Apache Arrow FlightSQL Server with DuckDB and SQLite backends"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "typer>=0.12.0",
     "pyarrow>=21.0.0",
@@ -54,20 +54,55 @@ include = ["src/mpzsql"]
 
 [tool.black]
 line-length = 88
-target-version = ['py311']
+target-version = ['py310']
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py310"
+
+# Exclude generated protobuf files and tests from linting
+exclude = [
+    "src/mpzsql/flightsql/generated/",
+    "tests/",
+]
+
+[tool.ruff.lint]
+# Enable core rule sets for code quality (much more practical)
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings  
+    "F",   # pyflakes (imports, undefined vars, etc.)
+    "I",   # isort (import organization)
+    "B",   # flake8-bugbear (common bugs)
+    "F811", # redefined-while-unused (catches duplicates!)
+]
+
+# Ignore specific rules that are too noisy for existing codebase
+ignore = [
+    "E501", # Line too long (let formatter handle this)
+    "W291", # Trailing whitespace (let formatter handle this)
+    "W293", # Blank line contains whitespace (let formatter handle this)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have more flexibility
+"tests/*" = ["B"]  # Allow some bugbear issues in tests
+
+[tool.ruff.format]
+# Use double quotes
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 strict = true
 ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
     "hatchling>=1.27.0",
+    "pre-commit>=4.2.0",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.0.0",
 ]

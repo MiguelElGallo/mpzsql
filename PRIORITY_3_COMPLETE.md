@@ -15,7 +15,7 @@
 - FlightInfo generation for statement_query and get_catalogs
 - **FIXED**: Proper protobuf serialization using google.protobuf.any_pb2
 
-### 2. FlightSQLProtobuf Tests (54 tests)  
+### 2. FlightSQLProtobuf Tests (54 tests)
 - Schema generation for all command types
 - Command parsing for statement queries and updates
 - Prepared statement handling and lifecycle
@@ -25,7 +25,7 @@
 
 ### 3. FlightSQLProtocol Tests (8 tests)
 - Command constants validation
-- Schema class functionality  
+- Schema class functionality
 - Module imports and compatibility
 - Protocol constant access
 
@@ -45,7 +45,7 @@
   - Field encoding: `query` field with protobuf varint + string value
   - Added missing `_parse_statement_query` method to MinimalFlightSQLServer
 
-### Fixed Test 2: `test_get_flight_info_get_catalogs`  
+### Fixed Test 2: `test_get_flight_info_get_catalogs`
 - **Issue**: Skipped due to complex protobuf serialization
 - **Solution**: Implemented proper protobuf mocking with:
   - Correct Any message with COMMAND_GET_CATALOGS_TYPE_URL
@@ -57,7 +57,7 @@
 ### Protobuf Serialization Approach
 Used real server log analysis to understand actual protobuf patterns:
 - Analyzed `actions.log` for FlightSQL operation flows
-- Examined `server_protobuf.log` for hex-encoded command structures  
+- Examined `server_protobuf.log` for hex-encoded command structures
 - Implemented proper `google.protobuf.any_pb2.Any` message construction
 - Used correct type URLs from FlightSQLProtobuf constants
 
@@ -80,7 +80,7 @@ rootdir: /Users/miguelperedo/Documents/GitHub/mpzsql
 configfile: pyproject.toml
 plugins: logfire-3.25.0, asyncio-1.1.0, cov-6.2.1
 asyncio: mode=Mode.STRICT, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 92 items                                                                                                                           
+collecting ... collected 92 items
 
 tests/test_flightsql_minimal_comprehensive.py ........                                                                                 [  8%]
 tests/test_flightsql_protobuf_comprehensive.py ......................................................                                  [ 67%]
@@ -93,7 +93,7 @@ tests/test_flightsql_server_base_comprehensive.py ......................        
 ## Priority 3 Objectives - ✅ COMPLETED
 
 ✅ **Comprehensive FlightSQL Protocol Testing**: 92 tests covering all aspects
-✅ **MinimalFlightSQLServer Validation**: Core functionality thoroughly tested  
+✅ **MinimalFlightSQLServer Validation**: Core functionality thoroughly tested
 ✅ **Protobuf Handling**: Complex serialization scenarios now working
 ✅ **Production Readiness**: FlightSQL implementation validated for real-world use
 ✅ **Zero Skipped Tests**: All edge cases and complex scenarios properly handled

@@ -2,7 +2,9 @@
 """Minimal client test to isolate the connection issue."""
 
 import os
-from adbc_driver_flightsql import dbapi as mpzsql, DatabaseOptions
+
+from adbc_driver_flightsql import DatabaseOptions
+from adbc_driver_flightsql import dbapi as mpzsql
 
 # Get TLS certificate and key paths from environment variables
 tls_cert_path = os.getenv("MPZSQL_TLS_CERT_PATH")
@@ -22,17 +24,18 @@ try:
     # Just try to connect, don't execute any queries
     conn = mpzsql.connect(uri="grpc+tls://localhost:8080", db_kwargs=db_kwargs)
     print("✓ Connection successful!")
-    
+
     # Try to get connection info
     print("Getting connection info...")
     cursor = conn.cursor()
     print("✓ Cursor created!")
-    
+
     cursor.close()
     conn.close()
     print("✓ Connection closed successfully!")
-    
+
 except Exception as e:
     print(f"✗ Connection failed: {e}")
     import traceback
+
     traceback.print_exc()
