@@ -55,13 +55,13 @@ class AuthMiddleware:
 
             logger.debug(f"JWT authentication successful for user: {token_username}")
 
-        except jwt.ExpiredSignatureError:
-            raise pf.FlightUnauthenticatedError("Token has expired")
+        except jwt.ExpiredSignatureError as e:
+            raise pf.FlightUnauthenticatedError("Token has expired") from e
         except jwt.InvalidTokenError as e:
-            raise pf.FlightUnauthenticatedError(f"Invalid token: {e}")
+            raise pf.FlightUnauthenticatedError(f"Invalid token: {e}") from e
         except Exception as e:
             logger.error(f"JWT authentication error: {e}")
-            raise pf.FlightUnauthenticatedError("Authentication failed")
+            raise pf.FlightUnauthenticatedError("Authentication failed") from e
 
     def _authenticate_basic(self, credentials: str) -> None:
         """Authenticate using Basic authentication."""
@@ -76,11 +76,13 @@ class AuthMiddleware:
 
             logger.debug(f"Basic authentication successful for user: {username}")
 
-        except ValueError:
-            raise pf.FlightUnauthenticatedError("Invalid basic authentication format")
+        except ValueError as e:
+            raise pf.FlightUnauthenticatedError(
+                "Invalid basic authentication format"
+            ) from e
         except Exception as e:
             logger.error(f"Basic authentication error: {e}")
-            raise pf.FlightUnauthenticatedError("Authentication failed")
+            raise pf.FlightUnauthenticatedError("Authentication failed") from e
 
     def generate_jwt_token(
         self, username: str | None = None, expiry_hours: int = 24
@@ -151,8 +153,8 @@ class FlightAuthHandler(pf.ServerAuthHandler):
             auth = pf.BasicAuth.deserialize(auth_bytes)
             username = auth.username.decode()
             password = auth.password.decode()
-        except Exception:
-            raise pf.FlightUnauthenticatedError("Invalid authentication data")
+        except Exception as e:
+            raise pf.FlightUnauthenticatedError("Invalid authentication data") from e
 
         if (
             username != self.auth_middleware.username
@@ -202,7 +204,7 @@ class FlightAuthHandler(pf.ServerAuthHandler):
 
         except Exception as e:
             logger.warning(f"Token validation failed: {e}")
-            raise pf.FlightUnauthenticatedError("Invalid token")
+            raise pf.FlightUnauthenticatedError("Invalid token") from e
 
 
 class NoOpAuthHandler(pf.ServerAuthHandler):
@@ -271,7 +273,7 @@ class HeaderAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
                 f"HeaderAuthMiddleware: Failed to parse basic auth header: {e}"
             )
             logger.error(f"HeaderAuthMiddleware: header = {header}")
-            raise pf.FlightUnauthenticatedError("Invalid basic auth header")
+            raise pf.FlightUnauthenticatedError("Invalid basic auth header") from e
         if user == self.username and pwd == self.password:
             logger.info(
                 f"HeaderAuthMiddleware: Authentication successful for user: {user}"
@@ -298,8 +300,8 @@ class BearerAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
             token = header[7:]
             try:
                 jwt.decode(token, self.secret_key, algorithms=["HS256"])
-            except Exception:
-                raise pf.FlightUnauthenticatedError("Invalid bearer token")
+            except Exception as e:
+                raise pf.FlightUnauthenticatedError("Invalid bearer token") from e
         return
 
 
@@ -423,7 +425,7 @@ class TLSCertificateLoader:
             return [cert_key_pair]
 
         except Exception as e:
-            raise ValueError(f"Failed to load TLS certificates: {e}")
+            raise ValueError(f"Failed to load TLS certificates: {e}") from e
 
     @staticmethod
     def load_mtls_ca_certificate(ca_cert_path: str) -> str:
@@ -455,7 +457,7 @@ class TLSCertificateLoader:
             return ca_content
 
         except Exception as e:
-            raise ValueError(f"Failed to load mTLS CA certificate: {e}")
+            raise ValueError(f"Failed to load mTLS CA certificate: {e}") from e
 
     @staticmethod
     def configure_tls_options(

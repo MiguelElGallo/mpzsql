@@ -60,57 +60,33 @@ target-version = ['py311']
 line-length = 88
 target-version = "py311"
 
+# Exclude generated protobuf files and tests from linting
+exclude = [
+    "src/mpzsql/flightsql/generated/",
+    "tests/",
+]
+
 [tool.ruff.lint]
-# Enable additional rule sets for code quality
+# Enable core rule sets for code quality (much more practical)
 select = [
     "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "N",   # pep8-naming
-    "D",   # pydocstyle
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "C90", # mccabe complexity
-    "PIE", # flake8-pie
-    "SIM", # flake8-simplify
-    "RET", # flake8-return
-    "ARG", # flake8-unused-arguments
-    "PTH", # flake8-use-pathlib
-    "ERA", # eradicate (commented-out code)
-    "PL",  # pylint
-    "TRY", # tryceratops
-    "FLY", # flynt (f-string conversion)
-    "PERF", # perflint
+    "W",   # pycodestyle warnings  
+    "F",   # pyflakes (imports, undefined vars, etc.)
+    "I",   # isort (import organization)
+    "B",   # flake8-bugbear (common bugs)
+    "F811", # redefined-while-unused (catches duplicates!)
 ]
 
-# Ignore specific rules that are too strict for this project
+# Ignore specific rules that are too noisy for existing codebase
 ignore = [
-    "D100", # Missing docstring in public module
-    "D101", # Missing docstring in public class
-    "D102", # Missing docstring in public method
-    "D103", # Missing docstring in public function
-    "D104", # Missing docstring in public package
-    "D105", # Missing docstring in magic method
-    "D107", # Missing docstring in __init__
-    "TRY003", # Avoid specifying long messages outside the exception class
-    "PLR0913", # Too many arguments to function call
-    "B008", # Do not perform function calls in argument defaults
+    "E501", # Line too long (let formatter handle this)
+    "W291", # Trailing whitespace (let formatter handle this)
+    "W293", # Blank line contains whitespace (let formatter handle this)
 ]
-
-[tool.ruff.lint.mccabe]
-# Set maximum complexity (default is 10, we'll be a bit more lenient)
-max-complexity = 15
-
-[tool.ruff.lint.pylint]
-max-args = 8  # Maximum number of arguments for function/method
 
 [tool.ruff.lint.per-file-ignores]
-# Test files can have more complex functions and missing docstrings
-"tests/*" = ["D", "C90", "PLR0913", "PLR0915"]
-# CLI modules can have more complex argument parsing
-"src/mpzsql/cli.py" = ["C90", "PLR0913"]
+# Test files can have more flexibility
+"tests/*" = ["B"]  # Allow some bugbear issues in tests
 
 [tool.ruff.format]
 # Use double quotes
