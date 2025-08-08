@@ -92,8 +92,8 @@ class TestDuckDBBackendArrowMethods:
         result = self.backend.execute_query(f"SELECT COUNT(*) as count FROM {table_name}")
         assert result.to_pylist()[0]['count'] == 5
 
-    def test_create_table_from_arrow_replaces_existing(self):
-        """Test that CREATE OR REPLACE works correctly."""
+    def test_create_table_from_arrow_appends_to_existing(self):
+        """Test that create_table_from_arrow appends to existing tables (new behavior)."""
         arrow_table1 = self.create_sample_arrow_table()
         arrow_table2 = pa.table({
             'id': [10, 20], 
@@ -102,22 +102,22 @@ class TestDuckDBBackendArrowMethods:
             'salary': [100000.0, 110000.0],
             'active': [True, True]
         })
-        table_name = "replaceable_table"
+        table_name = "appendable_table"
 
         # Create first table
         self.backend.create_table_from_arrow(table_name, arrow_table1)
         result1 = self.backend.execute_query(f"SELECT COUNT(*) as count FROM {table_name}")
         assert result1.to_pylist()[0]['count'] == 5
 
-        # Replace with second table
+        # Append second table (new behavior - no longer replaces)
         self.backend.create_table_from_arrow(table_name, arrow_table2)
         result2 = self.backend.execute_query(f"SELECT COUNT(*) as count FROM {table_name}")
-        assert result2.to_pylist()[0]['count'] == 2
+        assert result2.to_pylist()[0]['count'] == 7  # 5 + 2 = 7
 
-        # Verify data was replaced
+        # Verify both original and new data are present
         data_result = self.backend.execute_query(f"SELECT id FROM {table_name} ORDER BY id")
         ids = [row['id'] for row in data_result.to_pylist()]
-        assert ids == [10, 20]
+        assert ids == [1, 2, 3, 4, 5, 10, 20]  # All data preserved
 
     def test_create_table_from_schema_streaming_mode(self):
         """Test creating an empty table from schema (streaming mode - first chunk)."""
