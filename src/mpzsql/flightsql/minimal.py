@@ -18,6 +18,15 @@ from typing import Any, Dict, Iterator, List, Optional
 import pyarrow as pa
 import pyarrow.flight as pf  # keep original alias for pf.<...>
 
+from ..logfire_config import get_actions_logger, get_routing_logger
+
+# We now have both aliases available
+from ..security import (
+    BearerAuthServerMiddlewareFactory,
+    HeaderAuthServerMiddlewareFactory,
+    NoOpAuthHandler,
+    TLSCertificateLoader,
+)
 from .protobuf import (
     ActionBeginTransactionRequest,
     ActionClosePreparedStatementRequest,
@@ -36,15 +45,6 @@ from .protobuf import (
     DoPutUpdateResult,
     FlightSQLProtobuf,
     parse_any_command,
-)
-from ..logfire_config import get_actions_logger, get_routing_logger
-
-# We now have both aliases available
-from ..security import (
-    BearerAuthServerMiddlewareFactory,
-    HeaderAuthServerMiddlewareFactory,
-    NoOpAuthHandler,
-    TLSCertificateLoader,
 )
 
 # Initialize logfire loggers
@@ -262,7 +262,9 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             pf.ActionType("BeginTransaction", "Begin a transaction"),
             pf.ActionType("EndTransaction", "End a transaction"),
             # Add session management actions (FlightSQL standard)
-            pf.ActionType("CloseSession", "Close and invalidate the current session context"),
+            pf.ActionType(
+                "CloseSession", "Close and invalidate the current session context"
+            ),
         ]
         return iter(actions)
 
@@ -371,52 +373,60 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         try:
             # CloseSession typically receives no parameters (0 bytes as seen in logs)
             # This is a session cleanup action as per FlightSQL specification
-            
+
             logger.info("Closing session")
             print("SERVER: Closing session")
-            
+
             # Log session closure for actions.log
             actions_log.info("2. Command arguments: (none - session cleanup)")
             actions_log.info("3. Command sent to backend: session cleanup")
-            
+
             with self._mutex:
                 # Clean up any session-specific state
                 # For a stateless server, this is mostly a no-op, but we can:
                 # 1. Clean up any remaining prepared statements (defensive cleanup)
                 # 2. Clean up any open transactions (defensive cleanup)
                 # 3. Clean up session-specific resources
-                
+
                 session_cleanup_count = 0
-                
+
                 # Clean up any orphaned prepared statements
                 if self.prepared_statements:
                     session_cleanup_count += len(self.prepared_statements)
                     self.prepared_statements.clear()
-                    logger.info(f"Cleaned up {session_cleanup_count} prepared statements during session close")
-                
-                # Clean up any orphaned transactions  
+                    logger.info(
+                        f"Cleaned up {session_cleanup_count} prepared statements during session close"
+                    )
+
+                # Clean up any orphaned transactions
                 if self.open_transactions:
                     transaction_cleanup_count = len(self.open_transactions)
                     self.open_transactions.clear()
-                    logger.info(f"Cleaned up {transaction_cleanup_count} transactions during session close")
+                    logger.info(
+                        f"Cleaned up {transaction_cleanup_count} transactions during session close"
+                    )
                     session_cleanup_count += transaction_cleanup_count
-                
+
                 # Clean up any session-specific data
                 if self.open_sessions:
                     session_count = len(self.open_sessions)
                     self.open_sessions.clear()
-                    logger.info(f"Cleaned up {session_count} session entries during session close")
+                    logger.info(
+                        f"Cleaned up {session_count} session entries during session close"
+                    )
                     session_cleanup_count += session_count
-                
-            actions_log.info(f"4. Reply by backend: Session closed, cleaned up {session_cleanup_count} resources")
+
+            actions_log.info(
+                f"4. Reply by backend: Session closed, cleaned up {session_cleanup_count} resources"
+            )
             actions_log.info("5. Reply sent back: CloseSession completed successfully")
-            
+
             logger.info("Session closed successfully")
             print("SERVER: Session closed successfully")
-            
+
             # Return empty result (standard for CloseSession)
             return pf.Result(pa.py_buffer(b""))
-            
+
         except Exception as e:
             logger.error(f"Error closing session: {e}", exc_info=True)
             actions_log.info(f"4. Reply by backend: ERROR - {e}")
@@ -442,8 +452,51 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             f"{descriptor.descriptor_type}"
         )
 
+        # Support PATH descriptor for raw Flight operations (e.g., verify uploads)
+        if descriptor.descriptor_type == pf.DescriptorType.PATH:
+            try:
+                parts = []
+                if descriptor.path:
+                    for p in descriptor.path:
+                        if isinstance(p, (bytes, bytearray)):
+                            parts.append(p.decode("utf-8"))
+                        else:
+                            parts.append(str(p))
+                table_name = parts[0] if len(parts) == 1 else ".".join(parts)
+                routing_log.info(f"PATH GetFlightInfo for table: {table_name}")
+                schema = self.backend.get_table_schema(table_name)
+                try:
+                    total_rows = self.backend.get_table_row_count(table_name)
+                except Exception as e:
+                    logger.debug(f"Row count unavailable for {table_name}: {e}")
+                    total_rows = 0
+                endpoint = pf.FlightEndpoint(
+                    ticket=pf.Ticket(f"PATH:{table_name}".encode("utf-8")),
+                    locations=[self.advertised_location],
+                )
+                return pf.FlightInfo(
+                    schema=schema,
+                    descriptor=descriptor,
+                    endpoints=[endpoint],
+                    total_records=total_rows,
+                    total_bytes=0,
+                )
+            except Exception as e:
+                logger.error(f"PATH GetFlightInfo failed: {e}", exc_info=True)
+                empty_schema = pa.schema([])
+                endpoint = pf.FlightEndpoint(
+                    ticket=pf.Ticket(b""), locations=[self.advertised_location]
+                )
+                return pf.FlightInfo(
+                    schema=empty_schema,
+                    descriptor=descriptor,
+                    endpoints=[endpoint],
+                    total_records=0,
+                    total_bytes=0,
+                )
+
         if descriptor.descriptor_type != pf.DescriptorType.CMD:
-            raise NotImplementedError("Only CMD descriptors are supported.")
+            raise NotImplementedError("Only CMD and PATH descriptors are supported.")
 
         command_bytes = descriptor.command
         logger.info(f"GetFlightInfo command length: {len(command_bytes)} bytes")
@@ -717,11 +770,15 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                     actions_handler.flush()
 
                     # Retrieve stored parameters for this prepared statement
-                    stored_params = self.prepared_statements[handle].get("parameters", [])
+                    stored_params = self.prepared_statements[handle].get(
+                        "parameters", []
+                    )
                     if stored_params:
                         # Convert parameter batches to Python list format for DuckDB
                         params = self._convert_parameter_batches_to_list(stored_params)
-                        logger.info(f"Retrieved stored parameters for prepared statement: {params}")
+                        logger.info(
+                            f"Retrieved stored parameters for prepared statement: {params}"
+                        )
                         print(f"SERVER: Retrieved stored parameters: {params}")
                     else:
                         params = None
@@ -778,6 +835,48 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         print(
             f"SERVER: do_put called with descriptor type: {descriptor.descriptor_type}"
         )
+
+        # Handle raw Flight PATH uploads (Arrow table ingestion)
+        if descriptor.descriptor_type == pf.DescriptorType.PATH:
+            try:
+                parts = []
+                if descriptor.path:
+                    for p in descriptor.path:
+                        if isinstance(p, (bytes, bytearray)):
+                            parts.append(p.decode("utf-8"))
+                        else:
+                            parts.append(str(p))
+                table_name = parts[0] if len(parts) == 1 else ".".join(parts)
+
+                actions_log.info(f"RAW PATH do_put → table: {table_name}")
+                actions_handler.flush()
+
+                incoming_schema = getattr(reader, "schema", None)
+                if incoming_schema is None:
+                    raise ValueError("PATH do_put requires schema from client")
+
+                # Create empty table, then append all incoming batches
+                self.backend.create_table_from_schema(table_name, incoming_schema)
+                while True:
+                    try:
+                        chunk = reader.read_chunk()
+                    except StopIteration:
+                        break
+                    if not chunk or chunk.data is None:
+                        break
+                    batch_table = pa.Table.from_batches([chunk.data])
+                    self.backend.append_table_from_arrow(table_name, batch_table)
+
+                try:
+                    writer.write(pa.py_buffer(b""))
+                except Exception:
+                    pass
+                logger.info(f"Completed PATH do_put for table: {table_name}")
+                print(f"SERVER: PATH do_put completed for table: {table_name}")
+                return
+            except Exception as e:
+                logger.error(f"Error in PATH do_put: {e}", exc_info=True)
+                raise
         command_bytes = descriptor.command
         any_command = parse_any_command(command_bytes)
         if not any_command:
@@ -873,7 +972,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 if parameter_batches:
                     params = self._extract_parameters_from_batches(parameter_batches)
                     actions_log.info(f"Extracted parameters: {params}")
-                    
+
                 record_count = self._do_put_update_from_query(query, params)
 
                 result = DoPutUpdateResult(record_count=record_count)
@@ -1154,7 +1253,9 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         query = command.query
         return self._do_get_statement_from_query(query)
 
-    def _do_get_statement_from_query(self, query: str, params: Optional[List] = None) -> pf.FlightDataStream:
+    def _do_get_statement_from_query(
+        self, query: str, params: Optional[List] = None
+    ) -> pf.FlightDataStream:
         logger.info(f"Executing query: {query}")
         print(f"SERVER: Executing query: {query}")
         if params:
@@ -1165,7 +1266,9 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         actions_log.info("1. Receiving command: SQL Query")
         actions_log.info(f"2. Command arguments: {query}")
         if params:
-            actions_log.info(f"3. Command sent to DuckDB: {query} with parameters {params}")
+            actions_log.info(
+                f"3. Command sent to DuckDB: {query} with parameters {params}"
+            )
         else:
             actions_log.info(f"3. Command sent to DuckDB: {query}")
         actions_handler.flush()
@@ -1191,42 +1294,50 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             error_table = pa.table({"error": pa.array([str(e)])}, schema=error_schema)
             return pf.RecordBatchStream(error_table)
 
-    def _convert_parameter_batches_to_list(self, parameter_batches: List[pa.RecordBatch]) -> List:
+    def _convert_parameter_batches_to_list(
+        self, parameter_batches: List[pa.RecordBatch]
+    ) -> List:
         """
         Convert PyArrow parameter batches to a simple Python list for DuckDB.
-        
-        The client sends parameters as PyArrow record batches, but DuckDB expects 
+
+        The client sends parameters as PyArrow record batches, but DuckDB expects
         a simple Python list of values like [19] for a single parameter.
         """
         if not parameter_batches:
             return []
-        
+
         try:
             params = []
-            
+
             # Iterate through all parameter batches
             for batch in parameter_batches:
-                logger.info(f"Processing parameter batch with {batch.num_columns} columns and {batch.num_rows} rows")
-                
+                logger.info(
+                    f"Processing parameter batch with {batch.num_columns} columns and {batch.num_rows} rows"
+                )
+
                 # For each row in the batch (each row represents one execution)
                 for row_idx in range(batch.num_rows):
                     row_params = []
-                    
+
                     # For each column in the batch (each column is a parameter)
                     for col_idx in range(batch.num_columns):
                         column = batch.column(col_idx)
-                        value = column[row_idx].as_py()  # Convert Arrow scalar to Python value
+                        value = column[
+                            row_idx
+                        ].as_py()  # Convert Arrow scalar to Python value
                         row_params.append(value)
-                        logger.info(f"Parameter {col_idx}: {value} (type: {type(value)})")
-                    
+                        logger.info(
+                            f"Parameter {col_idx}: {value} (type: {type(value)})"
+                        )
+
                     # For prepared statements, we typically expect one row of parameters
                     # If there are multiple rows, we take the first one
                     if row_idx == 0:
                         params.extend(row_params)
-                    
+
             logger.info(f"Converted parameter batches to: {params}")
             return params
-            
+
         except Exception as e:
             logger.error(f"Error converting parameter batches: {e}", exc_info=True)
             return []
@@ -1328,7 +1439,9 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         query = command.query
         return self._do_put_update_from_query(query)
 
-    def _do_put_update_from_query(self, query: str, params: Optional[List] = None) -> int:
+    def _do_put_update_from_query(
+        self, query: str, params: Optional[List] = None
+    ) -> int:
         actions_log.info("1. Receiving command: SQL Update")
         actions_log.info(f"2. Command arguments: {query}")
         actions_log.info(f"3. Command sent to DuckDB: {query}")
@@ -1346,7 +1459,9 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             actions_log.info("5. Reply sent back: Error")
             raise e
 
-    def _extract_parameters_from_batches(self, parameter_batches: List[pa.RecordBatch]) -> List:
+    def _extract_parameters_from_batches(
+        self, parameter_batches: List[pa.RecordBatch]
+    ) -> List:
         """Extract parameter values from PyArrow record batches into a flat list."""
         params = []
         for batch in parameter_batches:

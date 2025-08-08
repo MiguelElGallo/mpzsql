@@ -24,6 +24,7 @@ dependencies = [
     "logfire>=3.24.0",
     "pytest-cov>=6.2.1",
     "grpcio-tools>=1.74.0",
+    "snowflake>=1.7.0",
 ]
 
 [project.scripts]
