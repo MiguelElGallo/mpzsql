@@ -37,12 +37,12 @@ case "${1:-help}" in
         echo "🚀 Running MPZSQL FlightSQL Demo..."
         "$PYTHON" src/demo_client/demo.py
         ;;
-    
+
     "test")
         echo "🔧 Testing connection to MPZSQL server..."
         "$PYTHON" src/demo_client/client.py test-connection "${@:2}"
         ;;
-    
+
     "query")
         if [ -z "$2" ]; then
             echo "❌ Error: Query required"
@@ -52,12 +52,12 @@ case "${1:-help}" in
         echo "📝 Executing query: $2"
         "$PYTHON" src/demo_client/client.py query "$2" "${@:3}"
         ;;
-    
+
     "connect")
         echo "🔗 Starting interactive mode..."
         "$PYTHON" src/demo_client/client.py connect "${@:2}"
         ;;
-    
+
     "help"|"--help"|"-h")
         echo "MPZSQL FlightSQL Demo Client Helper"
         echo "=================================="
@@ -82,7 +82,7 @@ case "${1:-help}" in
         echo ""
         echo "Default server: 127.0.0.1:8080"
         ;;
-    
+
     *)
         echo "❌ Unknown command: $1"
         echo "Run '$0 help' for usage information"

@@ -58,7 +58,7 @@ echo ""
 echo "📋 FINAL RESULTS:"
 if [ "$INTEGRATION_SUCCESS" = true ]; then
     echo "  🎉 TLS + Authentication: ✅ WORKING"
-    echo "  🔐 Encrypted connection: ✅ WORKING"  
+    echo "  🔐 Encrypted connection: ✅ WORKING"
     echo "  🔑 Basic authentication: ✅ WORKING"
     echo "  📜 Certificate handling: ✅ WORKING"
     echo "  🚧 Query execution: Further optimization needed"

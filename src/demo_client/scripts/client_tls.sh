@@ -164,7 +164,7 @@ case $COMMAND in
             echo "   TLS: Disabled"
         fi
         echo ""
-        
+
         # Run multiple demo queries
         DEMO_QUERIES=(
             "SELECT 1 as test, 'Hello World' as message"
@@ -172,20 +172,20 @@ case $COMMAND in
             "SELECT * FROM test_table"
             "SELECT COUNT(*) as total_rows FROM test_table"
         )
-        
+
         for query in "${DEMO_QUERIES[@]}"; do
             echo "🔍 Executing: $query"
             CMD="python3 $CLIENT_SCRIPT query \"$query\""
             CMD="$CMD --host $HOST --port $PORT"
-            
+
             if [[ "$USE_AUTH" == true ]]; then
                 CMD="$CMD --user $USERNAME --password $PASSWORD"
             fi
-            
+
             if [[ "$USE_TLS" == true ]]; then
                 CMD="$CMD --cert $CERT_FILE"
             fi
-            
+
             eval $CMD
             echo ""
         done

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Simple runner script for the MPZSQL demo client.
-"""
+"""Simple runner script for the MPZSQL demo client."""
 
 from src.demo_client.client import app
 

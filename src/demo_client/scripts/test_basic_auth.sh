@@ -19,14 +19,14 @@ SERVER_PID=""
 cleanup() {
     echo ""
     echo "🧹 Cleaning up..."
-    
+
     # Kill server if running
     if [[ -n "$SERVER_PID" ]]; then
         echo "   Stopping server (PID: $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
     fi
-    
+
     echo "✅ Cleanup complete"
 }
 

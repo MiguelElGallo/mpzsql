@@ -1,5 +1,4 @@
-"""
-FlightSQL Server Base Implementation for Python.
+"""FlightSQL Server Base Implementation for Python.
 
 This module provides a FlightSQL server base class that mimics the functionality
 of the Examples arrow::flight::sql::FlightSqlServerBase class, automatically handling
@@ -8,7 +7,7 @@ FlightSQL protocol details and command routing.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Iterator
+from collections.abc import Iterator
 
 import pyarrow as pa
 import pyarrow.flight as pf
@@ -34,8 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 class FlightSqlServerBase(pf.FlightServerBase, ABC):
-    """
-    Abstract base class for FlightSQL servers.
+    """Abstract base class for FlightSQL servers.
 
     This class provides the FlightSQL protocol handling and routes commands
     to appropriate abstract methods that must be implemented by subclasses.
@@ -100,29 +98,28 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL:
             command = self._extract_command_statement_query(any_command)
             return self.get_flight_info_statement(context, descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
             command = self._extract_command_get_catalogs(any_command)
             return self.get_flight_info_catalogs(context, descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
             command = self._extract_command_get_db_schemas(any_command)
             return self.get_flight_info_schemas(context, descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
             command = self._extract_command_get_tables(any_command)
             return self.get_flight_info_tables(context, descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
             command = self._extract_command_get_table_types(any_command)
             return self.get_flight_info_table_types(context, descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
             command = self._extract_command_get_sql_info(any_command)
             return self.get_flight_info_sql_info(context, descriptor, command)
-        elif (
+        if (
             command_type_url
             == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
         ):
             command = self._extract_command_prepared_statement_query(any_command)
             return self.get_flight_info_prepared_statement(context, descriptor, command)
-        else:
-            raise NotImplementedError(f"Unsupported command type: {command_type_url}")
+        raise NotImplementedError(f"Unsupported command type: {command_type_url}")
 
     def do_get(
         self, context: pf.ServerCallContext, ticket: pf.Ticket
@@ -143,29 +140,28 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL:
             command = self._extract_command_statement_query(any_command)
             return self.do_get_statement(context, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
             command = self._extract_command_get_catalogs(any_command)
             return self.do_get_catalogs(context, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
             command = self._extract_command_get_db_schemas(any_command)
             return self.do_get_schemas(context, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
             command = self._extract_command_get_tables(any_command)
             return self.do_get_tables(context, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
             command = self._extract_command_get_table_types(any_command)
             return self.do_get_table_types(context, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
             command = self._extract_command_get_sql_info(any_command)
             return self.do_get_sql_info(context, command)
-        elif (
+        if (
             command_type_url
             == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
         ):
             command = self._extract_command_prepared_statement_query(any_command)
             return self.do_get_prepared_statement(context, command)
-        else:
-            raise NotImplementedError(f"Unsupported command type: {command_type_url}")
+        raise NotImplementedError(f"Unsupported command type: {command_type_url}")
 
     def do_put(
         self,
@@ -258,7 +254,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         request: ActionCreatePreparedStatementRequest,
     ) -> pf.Result:
         """Create a prepared statement."""
-        pass
 
     @abstractmethod
     def close_prepared_statement(
@@ -267,7 +262,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         request: ActionClosePreparedStatementRequest,
     ) -> pf.Result:
         """Close a prepared statement."""
-        pass
 
     @abstractmethod
     def get_flight_info_statement(
@@ -277,7 +271,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: CommandStatementQuery,
     ) -> pf.FlightInfo:
         """Get flight info for a statement."""
-        pass
 
     @abstractmethod
     def get_flight_info_catalogs(
@@ -287,7 +280,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: CommandGetCatalogs,
     ) -> pf.FlightInfo:
         """Get flight info for catalogs."""
-        pass
 
     @abstractmethod
     def get_flight_info_schemas(
@@ -297,7 +289,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: CommandGetDbSchemas,
     ) -> pf.FlightInfo:
         """Get flight info for schemas."""
-        pass
 
     @abstractmethod
     def get_flight_info_tables(
@@ -307,7 +298,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: CommandGetTables,
     ) -> pf.FlightInfo:
         """Get flight info for tables."""
-        pass
 
     @abstractmethod
     def get_flight_info_table_types(
@@ -317,7 +307,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: CommandGetTableTypes,
     ) -> pf.FlightInfo:
         """Get flight info for table types."""
-        pass
 
     @abstractmethod
     def get_flight_info_sql_info(
@@ -327,7 +316,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: CommandGetSqlInfo,
     ) -> pf.FlightInfo:
         """Get flight info for SQL info."""
-        pass
 
     @abstractmethod
     def get_flight_info_prepared_statement(
@@ -337,56 +325,48 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         command: PreparedStatementQuery,
     ) -> pf.FlightInfo:
         """Get flight info for a prepared statement."""
-        pass
 
     @abstractmethod
     def do_get_statement(
         self, context: pf.ServerCallContext, command: CommandStatementQuery
     ) -> pf.FlightDataStream:
         """Execute a statement."""
-        pass
 
     @abstractmethod
     def do_get_catalogs(
         self, context: pf.ServerCallContext, command: CommandGetCatalogs
     ) -> pf.FlightDataStream:
         """Get catalogs."""
-        pass
 
     @abstractmethod
     def do_get_schemas(
         self, context: pf.ServerCallContext, command: CommandGetDbSchemas
     ) -> pf.FlightDataStream:
         """Get schemas."""
-        pass
 
     @abstractmethod
     def do_get_tables(
         self, context: pf.ServerCallContext, command: CommandGetTables
     ) -> pf.FlightDataStream:
         """Get tables."""
-        pass
 
     @abstractmethod
     def do_get_table_types(
         self, context: pf.ServerCallContext, command: CommandGetTableTypes
     ) -> pf.FlightDataStream:
         """Get table types."""
-        pass
 
     @abstractmethod
     def do_get_sql_info(
         self, context: pf.ServerCallContext, command: CommandGetSqlInfo
     ) -> pf.FlightDataStream:
         """Get SQL info."""
-        pass
 
     @abstractmethod
     def do_get_prepared_statement(
         self, context: pf.ServerCallContext, command: PreparedStatementQuery
     ) -> pf.FlightDataStream:
         """Execute a prepared statement."""
-        pass
 
     @abstractmethod
     def do_put_statement_update(
@@ -396,7 +376,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         reader: pf.FlightStreamReader,
     ) -> int:
         """Execute a statement update."""
-        pass
 
     @abstractmethod
     def do_put_prepared_statement_update(
@@ -406,7 +385,6 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         reader: pf.FlightStreamReader,
     ) -> int:
         """Execute a prepared statement update."""
-        pass
 
     # Helper methods
     def _create_flight_info_for_command(

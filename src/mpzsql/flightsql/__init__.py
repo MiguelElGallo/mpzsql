@@ -1,3 +1,1 @@
-"""
-FlightSQL protocol implementation for MPZSQL.
-"""
+"""FlightSQL protocol implementation for MPZSQL."""

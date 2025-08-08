@@ -1,21 +1,20 @@
-"""
-CLI interface for MPZSQL server using typer.
+"""CLI interface for MPZSQL server using typer.
 
 This module implements the command-line argument parsing and main entrypoint
 for the MPZSQL server, supporting all options from the original Examples implementation.
 """
-import subprocess
-import psycopg2
-import psycopg2.errors
+
 import asyncio
 import logging
 import os
 import secrets
+import subprocess
 from pathlib import Path
-from typing import Optional, Tuple
 
 import duckdb
 import fsspec
+import psycopg2
+import psycopg2.errors
 import typer
 from azure.identity.aio import DefaultAzureCredential
 from rich.console import Console
@@ -24,8 +23,8 @@ from rich.text import Text
 
 from mpzsql import __version__
 from mpzsql.config import ServerConfig
-from mpzsql.server import MPZSQLServer
 from mpzsql.logfire_config import LogfireManager, get_main_logger
+from mpzsql.server import MPZSQLServer
 
 # Create typer app and rich console
 app = typer.Typer(
@@ -39,7 +38,7 @@ console = Console()
 def validate_postgresql_connection(config: ServerConfig) -> bool:
     """Test PostgreSQL connection using provided configuration."""
     logger = get_main_logger()
-    
+
     if not config.is_postgresql_enabled:
         return True  # Skip test if not configured
 
@@ -51,9 +50,11 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         console.print(
             f"[blue]🔍 Testing PostgreSQL connection to {config.postgresql_server}:{config.postgresql_port}...[/blue]"
         )
-        logger.info("Testing PostgreSQL connection", 
-                   server=config.postgresql_server, 
-                   port=config.postgresql_port)
+        logger.info(
+            "Testing PostgreSQL connection",
+            server=config.postgresql_server,
+            port=config.postgresql_port,
+        )
 
         # Handle Azure authentication
         password = config.postgresql_password
@@ -118,13 +119,15 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         if config.postgresql_catalogdb:
             console.print(f"[dim]   Database: {config.postgresql_catalogdb}[/dim]")
         console.print(f"[dim]   Version: {version.split(',')[0]}[/dim]")
-        
-        logger.info("PostgreSQL connection successful", 
-                   server=config.postgresql_server,
-                   port=config.postgresql_port,
-                   user=config.postgresql_user,
-                   database=config.postgresql_catalogdb,
-                   version=version.split(',')[0])
+
+        logger.info(
+            "PostgreSQL connection successful",
+            server=config.postgresql_server,
+            port=config.postgresql_port,
+            user=config.postgresql_user,
+            database=config.postgresql_catalogdb,
+            version=version.split(",")[0],
+        )
         return True
 
     except ImportError:
@@ -141,19 +144,21 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         console.print(f"[dim]   User: {config.postgresql_user}[/dim]")
         if config.postgresql_catalogdb:
             console.print(f"[dim]   Database: {config.postgresql_catalogdb}[/dim]")
-        logger.error("PostgreSQL connection failed", 
-                    error=str(e),
-                    server=config.postgresql_server,
-                    port=config.postgresql_port,
-                    user=config.postgresql_user,
-                    database=config.postgresql_catalogdb)
+        logger.error(
+            "PostgreSQL connection failed",
+            error=str(e),
+            server=config.postgresql_server,
+            port=config.postgresql_port,
+            user=config.postgresql_user,
+            database=config.postgresql_catalogdb,
+        )
         return False
 
 
 def validate_azure_storage_connection(config: ServerConfig) -> bool:
     """Test Azure Storage connection using default credentials."""
     logger = get_main_logger()
-    
+
     if not config.is_azure_storage_enabled:
         return True  # Skip test if not configured
 
@@ -164,9 +169,11 @@ def validate_azure_storage_connection(config: ServerConfig) -> bool:
         console.print(
             f"[blue]🔍 Testing Azure Storage connection to {config.azure_storage_account}...[/blue]"
         )
-        logger.info("Testing Azure Storage connection", 
-                   account=config.azure_storage_account,
-                   container=config.azure_storage_container)
+        logger.info(
+            "Testing Azure Storage connection",
+            account=config.azure_storage_account,
+            container=config.azure_storage_container,
+        )
 
         # Use default credentials
         credential = DefaultAzureCredential()
@@ -187,11 +194,13 @@ def validate_azure_storage_connection(config: ServerConfig) -> bool:
         console.print(f"[dim]   Account: {config.azure_storage_account}[/dim]")
         console.print(f"[dim]   Container: {config.azure_storage_container}[/dim]")
         console.print(f"[dim]   Last Modified: {properties.last_modified}[/dim]")
-        
-        logger.info("Azure Storage connection successful",
-                   account=config.azure_storage_account,
-                   container=config.azure_storage_container,
-                   last_modified=str(properties.last_modified))
+
+        logger.info(
+            "Azure Storage connection successful",
+            account=config.azure_storage_account,
+            container=config.azure_storage_container,
+            last_modified=str(properties.last_modified),
+        )
         return True
 
     except ImportError:
@@ -204,10 +213,12 @@ def validate_azure_storage_connection(config: ServerConfig) -> bool:
         console.print(f"[red]❌ Azure Storage connection failed: {e}[/red]")
         console.print(f"[dim]   Account: {config.azure_storage_account}[/dim]")
         console.print(f"[dim]   Container: {config.azure_storage_container}[/dim]")
-        logger.error("Azure Storage connection failed",
-                    error=str(e),
-                    account=config.azure_storage_account,
-                    container=config.azure_storage_container)
+        logger.error(
+            "Azure Storage connection failed",
+            error=str(e),
+            account=config.azure_storage_account,
+            container=config.azure_storage_container,
+        )
         return False
 
 
@@ -219,8 +230,8 @@ def validate_backend(value: str) -> str:
 
 
 def validate_tls_files(
-    cert_file: Optional[str], key_file: Optional[str]
-) -> Tuple[Optional[str], Optional[str]]:
+    cert_file: str | None, key_file: str | None
+) -> tuple[str | None, str | None]:
     """Validate TLS certificate and key files."""
     if cert_file and key_file:
         if not Path(cert_file).exists():
@@ -234,9 +245,7 @@ def validate_tls_files(
     return cert_file, key_file
 
 
-def load_init_sql(
-    init_sql: Optional[str], init_sql_file: Optional[str]
-) -> Optional[str]:
+def load_init_sql(init_sql: str | None, init_sql_file: str | None) -> str | None:
     """Load initialization SQL from inline command or file."""
     if init_sql_file:
         try:
@@ -251,16 +260,19 @@ def load_init_sql(
 def ensure_postgresql_database(config: ServerConfig) -> bool:
     """Ensure PostgreSQL catalog database exists, creating it if necessary."""
     logger = get_main_logger()
-    
+
     if not config.is_postgresql_enabled or not config.postgresql_catalogdb:
         return True  # Skip if not configured or no specific database needed
 
     try:
-
-        console.print(f"[blue]🔧 Ensuring PostgreSQL database '{config.postgresql_catalogdb}' exists...[/blue]")
-        logger.info("Ensuring PostgreSQL database exists", 
-                   database=config.postgresql_catalogdb,
-                   server=config.postgresql_server)
+        console.print(
+            f"[blue]🔧 Ensuring PostgreSQL database '{config.postgresql_catalogdb}' exists...[/blue]"
+        )
+        logger.info(
+            "Ensuring PostgreSQL database exists",
+            database=config.postgresql_catalogdb,
+            server=config.postgresql_server,
+        )
 
         # Handle Azure authentication
         password = config.postgresql_password
@@ -285,7 +297,10 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
                 password = result.stdout.strip()
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
                 console.print(f"[red]❌ Failed to get Azure access token: {e}[/red]")
-                logger.error("Failed to get Azure access token for database creation", error=str(e))
+                logger.error(
+                    "Failed to get Azure access token for database creation",
+                    error=str(e),
+                )
                 return False
 
         # Connect to default postgres database to check/create target database
@@ -305,38 +320,56 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
         # Check if database exists
         cursor.execute(
             "SELECT 1 FROM pg_database WHERE datname = %s;",
-            (config.postgresql_catalogdb,)
+            (config.postgresql_catalogdb,),
         )
         exists = cursor.fetchone()
 
         if exists:
-            console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' already exists[/green]")
-            logger.info("PostgreSQL database already exists", database=config.postgresql_catalogdb)
+            console.print(
+                f"[green]✅ Database '{config.postgresql_catalogdb}' already exists[/green]"
+            )
+            logger.info(
+                "PostgreSQL database already exists",
+                database=config.postgresql_catalogdb,
+            )
         else:
             # Create the database with error handling for race conditions
             try:
                 cursor.execute(f'CREATE DATABASE "{config.postgresql_catalogdb}";')
-                console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' created successfully[/green]")
-                logger.info("PostgreSQL database created", database=config.postgresql_catalogdb)
+                console.print(
+                    f"[green]✅ Database '{config.postgresql_catalogdb}' created successfully[/green]"
+                )
+                logger.info(
+                    "PostgreSQL database created", database=config.postgresql_catalogdb
+                )
             except psycopg2.errors.DuplicateDatabase:
                 # Database was created by another process between our check and creation attempt
-                console.print(f"[green]✅ Database '{config.postgresql_catalogdb}' already exists (created concurrently)[/green]")
-                logger.info("PostgreSQL database already exists (created concurrently)", database=config.postgresql_catalogdb)
+                console.print(
+                    f"[green]✅ Database '{config.postgresql_catalogdb}' already exists (created concurrently)[/green]"
+                )
+                logger.info(
+                    "PostgreSQL database already exists (created concurrently)",
+                    database=config.postgresql_catalogdb,
+                )
 
         cursor.close()
         conn.close()
         return True
 
     except ImportError:
-        console.print("[red]❌ Database creation failed: psycopg2-binary not installed[/red]")
+        console.print(
+            "[red]❌ Database creation failed: psycopg2-binary not installed[/red]"
+        )
         logger.error("Database creation failed: psycopg2-binary not installed")
         return False
     except Exception as e:
         console.print(f"[red]❌ Database creation failed: {e}[/red]")
-        logger.error("Database creation failed", 
-                    error=str(e),
-                    database=config.postgresql_catalogdb,
-                    server=config.postgresql_server)
+        logger.error(
+            "Database creation failed",
+            error=str(e),
+            database=config.postgresql_catalogdb,
+            server=config.postgresql_server,
+        )
         return False
 
 
@@ -349,18 +382,18 @@ def main(
         help="Database backend (duckdb, sqlite)",
         callback=lambda _, value: validate_backend(value) if value else "duckdb",
     ),
-    database: Optional[str] = typer.Option(
+    database: str | None = typer.Option(
         None,
         "--database",
         help="Database filename (defaults to in-memory for DuckDB, required for SQLite)",
     ),
     # Network options
-    hostname: Optional[str] = typer.Option(
+    hostname: str | None = typer.Option(
         None,
         "--hostname",
         help="Server hostname to listen on (default: localhost, env: MPZSQL_HOSTNAME)",
     ),
-    advertised_hostname: Optional[str] = typer.Option(
+    advertised_hostname: str | None = typer.Option(
         None,
         "--advertised-hostname",
         help="Hostname to advertise to clients (defaults to hostname, env: MPZSQL_ADVERTISED_HOSTNAME or WEBSITE_HOSTNAME)",
@@ -373,44 +406,44 @@ def main(
         max=65535,
     ),
     # Authentication options
-    username: Optional[str] = typer.Option(
+    username: str | None = typer.Option(
         None,
         "--username",
         help="Authentication username (env: MPZSQL_USERNAME)",
     ),
-    password: Optional[str] = typer.Option(
+    password: str | None = typer.Option(
         None,
         "--password",
         help="Authentication password (env: MPZSQL_PASSWORD)",
     ),
-    secret_key: Optional[str] = typer.Option(
+    secret_key: str | None = typer.Option(
         None,
         "--secret-key",
         help="JWT secret key (env: SECRET_KEY, random if not provided)",
     ),
     # TLS options
-    tls_cert: Optional[str] = typer.Option(
+    tls_cert: str | None = typer.Option(
         None,
         "--tls-cert",
         help="TLS certificate file path",
     ),
-    tls_key: Optional[str] = typer.Option(
+    tls_key: str | None = typer.Option(
         None,
         "--tls-key",
         help="TLS private key file path",
     ),
-    mtls_ca: Optional[str] = typer.Option(
+    mtls_ca: str | None = typer.Option(
         None,
         "--mtls-ca",
         help="mTLS CA certificate for client verification (env: MPZSQL_MTLS_CA)",
     ),
     # SQL initialization options
-    init_sql: Optional[str] = typer.Option(
+    init_sql: str | None = typer.Option(
         None,
         "--init-sql",
         help="SQL commands to run on startup (env: MPZSQL_INIT_SQL)",
     ),
-    init_sql_file: Optional[str] = typer.Option(
+    init_sql_file: str | None = typer.Option(
         None,
         "--init-sql-file",
         help="File containing SQL commands to run on startup (env: MPZSQL_INIT_SQL_FILE)",
@@ -427,38 +460,38 @@ def main(
         help="Enable read-only mode",
     ),
     # PostgreSQL connection options
-    postgresql_server: Optional[str] = typer.Option(
+    postgresql_server: str | None = typer.Option(
         None,
         "--postgresql-server",
         help="PostgreSQL server hostname (env: POSTGRESQL_SERVER)",
     ),
-    postgresql_port: Optional[int] = typer.Option(
+    postgresql_port: int | None = typer.Option(
         5432,
         "--postgresql-port",
         help="PostgreSQL server port (env: POSTGRESQL_PORT)",
     ),
-    postgresql_user: Optional[str] = typer.Option(
+    postgresql_user: str | None = typer.Option(
         None,
         "--postgresql-user",
         help="PostgreSQL username (env: POSTGRESQL_USER)",
     ),
-    postgresql_password: Optional[str] = typer.Option(
+    postgresql_password: str | None = typer.Option(
         None,
         "--postgresql-password",
         help="PostgreSQL password (env: POSTGRESQL_PASSWORD)",
     ),
-    postgresql_catalogdb: Optional[str] = typer.Option(
+    postgresql_catalogdb: str | None = typer.Option(
         None,
         "--postgresql-catalogdb",
         help="PostgreSQL catalog database name (env: POSTGRESQL_CATALOGDB)",
     ),
     # Azure Storage connection options
-    azure_storage_account: Optional[str] = typer.Option(
+    azure_storage_account: str | None = typer.Option(
         None,
         "--azure-storage-account",
         help="Azure Storage account name (env: AZURE_STORAGE_ACCOUNT)",
     ),
-    azure_storage_container: Optional[str] = typer.Option(
+    azure_storage_container: str | None = typer.Option(
         None,
         "--azure-storage-container",
         help="Azure Storage container name (env: AZURE_STORAGE_CONTAINER)",
@@ -471,7 +504,6 @@ def main(
     ),
 ) -> None:
     """Start the MPZSQL Apache Arrow FlightSQL server."""
-
     # Handle version request first, before any initialization
     if version:
         console.print(f"MPZSQL Server version {__version__}")
@@ -480,7 +512,7 @@ def main(
     # Initialize logfire
     LogfireManager.initialize()
     logger = get_main_logger()
-    
+
     # Setup legacy logging for backward compatibility (but logfire is now primary)
     log_file = os.getenv("MPZSQL_LOG_FILE", "mpzsql.log")
     logging.basicConfig(
@@ -499,27 +531,31 @@ def main(
 
     # Environment variable fallbacks
     hostname = hostname or os.getenv("MPZSQL_HOSTNAME", "localhost")
-    
+
     # Advertised hostname with Azure Web Apps support
     # Priority: CLI option > MPZSQL_ADVERTISED_HOSTNAME > WEBSITE_HOSTNAME > hostname
     if advertised_hostname is None:
         advertised_hostname = (
-            os.getenv("MPZSQL_ADVERTISED_HOSTNAME") or
-            os.getenv("WEBSITE_HOSTNAME")  # Azure Web Apps hostname
+            os.getenv("MPZSQL_ADVERTISED_HOSTNAME")
+            or os.getenv("WEBSITE_HOSTNAME")  # Azure Web Apps hostname
         )
-    
+
     # Handle MPZSQL_PORT environment variable with precedence over CLI port
     env_port = os.getenv("MPZSQL_PORT")
     if env_port:
         try:
             port = int(env_port)
             if port < 1 or port > 65535:
-                console.print(f"[red]Error:[/red] Invalid port in MPZSQL_PORT environment variable: {env_port} (must be 1-65535)")
+                console.print(
+                    f"[red]Error:[/red] Invalid port in MPZSQL_PORT environment variable: {env_port} (must be 1-65535)"
+                )
                 raise typer.Exit(1)
         except ValueError:
-            console.print(f"[red]Error:[/red] Invalid port in MPZSQL_PORT environment variable: {env_port} (must be a number)")
+            console.print(
+                f"[red]Error:[/red] Invalid port in MPZSQL_PORT environment variable: {env_port} (must be a number)"
+            )
             raise typer.Exit(1)
-    
+
     username = username or os.getenv("MPZSQL_USERNAME")
     password = password or os.getenv("MPZSQL_PASSWORD")
     secret_key = secret_key or os.getenv("SECRET_KEY")
@@ -597,9 +633,9 @@ def main(
 
     if config.is_postgresql_enabled:
         # Ensure PostgreSQL database exists before validating connection
-        if not ensure_postgresql_database(config):
-            connection_checks_passed = False
-        elif not validate_postgresql_connection(config):
+        if not ensure_postgresql_database(config) or not validate_postgresql_connection(
+            config
+        ):
             connection_checks_passed = False
 
     if config.is_azure_storage_enabled:
@@ -678,7 +714,7 @@ def setup_duckdb_connection(az_fs, config: ServerConfig) -> duckdb.DuckDBPyConne
 
 async def initialize_duckdb_with_azure(
     config: ServerConfig,
-) -> Optional[duckdb.DuckDBPyConnection]:
+) -> duckdb.DuckDBPyConnection | None:
     """Initialize DuckDB with Azure integration and run setup commands."""
     if not config.is_azure_storage_enabled:
         console.print(
@@ -723,7 +759,9 @@ async def initialize_duckdb_with_azure(
             if config.is_postgresql_enabled:
                 # Ensure the PostgreSQL database exists
                 if not ensure_postgresql_database(config):
-                    console.print("[red]❌ Failed to ensure PostgreSQL database exists[/red]")
+                    console.print(
+                        "[red]❌ Failed to ensure PostgreSQL database exists[/red]"
+                    )
                     raise Exception("PostgreSQL database creation failed")
 
                 console.print("\n🔐 Creating PostgreSQL secret...")
@@ -754,7 +792,6 @@ async def initialize_duckdb_with_azure(
                     else:
                         pg_password = config.postgresql_password
 
-                    
                     pg_secret_sql = f"""
                     CREATE SECRET (
                         TYPE postgres,
@@ -802,9 +839,9 @@ async def initialize_duckdb_with_azure(
                     console.print(f"   Result: {result}")
 
                     # Switch to the ducklake database
-                    #result = con.execute("USE my_ducklake;").fetchall()
-                    #console.print("✅ Switched to ducklake database")
-                    #console.print(f"   Result: {result}")
+                    # result = con.execute("USE my_ducklake;").fetchall()
+                    # console.print("✅ Switched to ducklake database")
+                    # console.print(f"   Result: {result}")
 
                     # Show available databases for verification
                     console.print("\n📋 Verifying available databases...")
@@ -859,7 +896,6 @@ def initialize_duckdb_basic(config: ServerConfig) -> duckdb.DuckDBPyConnection:
 
 def print_startup_banner(config: ServerConfig) -> None:
     """Print server startup banner with configuration details."""
-
     # Server info
     server_info = Text()
     server_info.append("MPZSQL Server ", style="bold blue")
@@ -925,7 +961,7 @@ def print_startup_banner(config: ServerConfig) -> None:
     console.print(
         f"\n[green]Starting server on {config.hostname}:{config.port}...[/green]"
     )
-    
+
     # Show advertised address if different from listen address
     if config.effective_advertised_hostname != config.hostname:
         console.print(

@@ -1,5 +1,4 @@
-"""
-DuckDB backend implementation for MPZSQL.
+"""DuckDB backend implementation for MPZSQL.
 
 This module provides the DuckDB-specific implementation of the database backend,
 including query execution, schema introspection, and metadata operations.
@@ -8,7 +7,6 @@ including query execution, schema introspection, and metadata operations.
 import logging
 import os
 import uuid
-from typing import List, Optional, Tuple
 
 import duckdb
 import pyarrow as pa
@@ -129,7 +127,7 @@ class DuckDBBackend(DatabaseBackend):
             logger.error(f"SQL execution failed: {e}")
             raise
 
-    def execute_query(self, query: str, params: Optional[List] = None) -> pa.Table:
+    def execute_query(self, query: str, params: list | None = None) -> pa.Table:
         """Execute a SQL query using DuckDB and return the results as a PyArrow Table."""
         try:
             duckdb_log.info(f"Executing query: {query}")
@@ -153,7 +151,7 @@ class DuckDBBackend(DatabaseBackend):
             fh.flush()  # Force flush on error
             raise
 
-    def execute_update(self, query: str, params: Optional[List] = None) -> int:
+    def execute_update(self, query: str, params: list | None = None) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
         try:
             duckdb_log.info(f"Executing update query: {query}")
@@ -431,11 +429,9 @@ class DuckDBBackend(DatabaseBackend):
 
                     if isinstance(result, pa.Table):
                         return result.schema
-                    else:
-                        return result.schema
-                else:
-                    # For non-SELECT statements, return empty schema
-                    return pa.schema([])
+                    return result.schema
+                # For non-SELECT statements, return empty schema
+                return pa.schema([])
 
             except Exception as e2:
                 logger.error(f"Schema fallback failed: {e2}")
@@ -495,9 +491,8 @@ class DuckDBBackend(DatabaseBackend):
                     if "," in params:
                         precision, scale = map(int, params.split(","))
                         return pa.decimal128(precision, scale)
-                    else:
-                        precision = int(params)
-                        return pa.decimal128(precision, 0)
+                    precision = int(params)
+                    return pa.decimal128(precision, 0)
                 except (ValueError, IndexError):
                     pass
             return pa.decimal128(18, 3)  # Default precision and scale
@@ -569,13 +564,13 @@ class DuckDBBackend(DatabaseBackend):
             fh.flush()
             return table
 
-    def get_schemas(self, catalog: Optional[str] = None) -> List[Tuple[str, str]]:
+    def get_schemas(self, catalog: str | None = None) -> list[tuple[str, str]]:
         """Get available schemas for a catalog, returns (catalog, schema) tuples."""
         try:
             # Use the same query structure as Examples implementation
             query = """
-            SELECT catalog_name, schema_name AS db_schema_name 
-            FROM information_schema.schemata 
+            SELECT catalog_name, schema_name AS db_schema_name
+            FROM information_schema.schemata
             WHERE 1 = 1
             """
 
@@ -636,10 +631,10 @@ class DuckDBBackend(DatabaseBackend):
 
     def get_tables(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter_pattern: Optional[str] = None,
-        table_name_filter_pattern: Optional[str] = None,
-        table_types: Optional[List[str]] = None,
+        catalog: str | None = None,
+        db_schema_filter_pattern: str | None = None,
+        table_name_filter_pattern: str | None = None,
+        table_types: list[str] | None = None,
         include_schema: bool = False,
     ) -> pa.Table:
         """Get available tables with their metadata as an Arrow table."""
@@ -656,9 +651,9 @@ class DuckDBBackend(DatabaseBackend):
         )
 
         query = """
-            SELECT 
+            SELECT
                 table_catalog as catalog_name,
-                table_schema as db_schema_name, 
+                table_schema as db_schema_name,
                 table_name,
                 table_type
             FROM information_schema.tables
@@ -705,7 +700,7 @@ class DuckDBBackend(DatabaseBackend):
                 table_types = result_table.column("table_type").to_pylist()
                 duckdb_log.info("get_tables() - Catalog-Schema-Table relationships:")
                 for i, (cat, schema, table, ttype) in enumerate(
-                    zip(catalogs, schemas, tables, table_types)
+                    zip(catalogs, schemas, tables, table_types, strict=False)
                 ):
                     duckdb_log.info(f"  {i + 1}. {cat}.{schema}.{table} ({ttype})")
             else:
@@ -751,7 +746,7 @@ class DuckDBBackend(DatabaseBackend):
                         # Serialize the schema to bytes as required by Flight SQL
                         import io
 
-                        import pyarrow.ipc as ipc
+                        from pyarrow import ipc
 
                         # Write schema to a buffer
                         buffer = io.BytesIO()
@@ -824,10 +819,10 @@ class DuckDBBackend(DatabaseBackend):
 
     def get_columns(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter_pattern: Optional[str] = None,
-        table_name_filter_pattern: Optional[str] = None,
-        column_name_filter_pattern: Optional[str] = None,
+        catalog: str | None = None,
+        db_schema_filter_pattern: str | None = None,
+        table_name_filter_pattern: str | None = None,
+        column_name_filter_pattern: str | None = None,
     ) -> pa.Table:
         """Get columns for a table as an Arrow table."""
         try:
@@ -839,7 +834,7 @@ class DuckDBBackend(DatabaseBackend):
                 table_name,
                 column_name,
                 data_type,
-                ordinal_position AS "DECIMAL_DIGITS", 
+                ordinal_position AS "DECIMAL_DIGITS",
                 'YES' as "IS_NULLABLE",
                 0 as "NUM_PREC_RADIX"
             FROM information_schema.columns
@@ -887,8 +882,7 @@ class DuckDBBackend(DatabaseBackend):
             def get_column_or_null(table, name, type):
                 if name in table.schema.names:
                     return table.column(name).cast(type)
-                else:
-                    return pa.nulls(num_rows, type=type)
+                return pa.nulls(num_rows, type=type)
 
             # A simple mapping from DuckDB types to SQL type codes (INTEGER for now)
             # This should be expanded for correctness.
@@ -1027,12 +1021,12 @@ class DuckDBBackend(DatabaseBackend):
         try:
             # Build the query based on filters
             base_query = """
-            SELECT 
+            SELECT
                 current_database() as catalog_name,
                 schema_name,
                 table_name,
                 table_type
-            FROM information_schema.tables 
+            FROM information_schema.tables
             WHERE 1=1
             """
 
@@ -1115,7 +1109,7 @@ class DuckDBBackend(DatabaseBackend):
         except Exception as e:
             logger.error(f"Error closing DuckDB connection: {e}")
 
-    def get_sql_info(self, info_codes: List[int]) -> pa.Table:
+    def get_sql_info(self, info_codes: list[int]) -> pa.Table:
         """Get SQL info for the given info codes as an Arrow table."""
         # This is a placeholder implementation.
         # It should be updated to return correct values based on the info_codes.
@@ -1132,14 +1126,14 @@ class DuckDBBackend(DatabaseBackend):
 
     def get_db_schemas(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter_pattern: Optional[str] = None,
+        catalog: str | None = None,
+        db_schema_filter_pattern: str | None = None,
     ) -> pa.Table:
         """Get available schemas for a catalog as an Arrow table."""
         try:
             query = """
-            SELECT catalog_name, schema_name AS db_schema_name 
-            FROM information_schema.schemata 
+            SELECT catalog_name, schema_name AS db_schema_name
+            FROM information_schema.schemata
             WHERE 1 = 1
             """
 
@@ -1178,7 +1172,7 @@ class DuckDBBackend(DatabaseBackend):
                 catalogs = result.column("catalog_name").to_pylist()
                 schemas = result.column("db_schema_name").to_pylist()
                 duckdb_log.info("get_db_schemas() - Catalog-Schema relationships:")
-                for i, (cat, schema) in enumerate(zip(catalogs, schemas)):
+                for i, (cat, schema) in enumerate(zip(catalogs, schemas, strict=False)):
                     duckdb_log.info(f"  {i + 1}. {cat} -> {schema}")
             else:
                 duckdb_log.warning("get_db_schemas() - No schemas found!")
@@ -1265,55 +1259,6 @@ class DuckDBBackend(DatabaseBackend):
                             )
                             # Continue anyway - DuckDB might handle it automatically
 
-    def _ensure_catalog_exists(self, table_name: str) -> None:
-        """Ensure that the catalog exists for a qualified table name.
-
-        For table names like 'my_ducklake.main.table_name', ensure the 'my_ducklake' catalog exists.
-        If it doesn't exist, create it as an in-memory catalog for testing.
-        """
-        if "." in table_name:
-            parts = table_name.split(".")
-            if len(parts) >= 3:  # catalog.schema.table format
-                catalog_name = parts[0]
-
-                try:
-                    # Check if catalog exists by trying to query it
-                    self.connection.execute(
-                        f"SELECT * FROM {catalog_name}.information_schema.schemata LIMIT 0"
-                    )
-                    duckdb_log.info(
-                        f"_ensure_catalog_exists: Catalog '{catalog_name}' already exists"
-                    )
-                except Exception:
-                    # Catalog doesn't exist, create it as in-memory
-                    try:
-                        self.connection.execute(f"CREATE DATABASE {catalog_name}")
-                        duckdb_log.info(
-                            f"_ensure_catalog_exists: Created in-memory catalog '{catalog_name}'"
-                        )
-                        duckdb_logger.info(
-                            "Created in-memory catalog for testing",
-                            catalog_name=catalog_name,
-                        )
-                    except Exception as e:
-                        # If CREATE DATABASE fails, try ATTACH as in-memory
-                        try:
-                            self.connection.execute(
-                                f"ATTACH ':memory:' AS {catalog_name}"
-                            )
-                            duckdb_log.info(
-                                f"_ensure_catalog_exists: Attached in-memory catalog '{catalog_name}'"
-                            )
-                            duckdb_logger.info(
-                                "Attached in-memory catalog for testing",
-                                catalog_name=catalog_name,
-                            )
-                        except Exception as e2:
-                            duckdb_log.warning(
-                                f"_ensure_catalog_exists: Could not create catalog '{catalog_name}': {e}, {e2}"
-                            )
-                            # Continue anyway - DuckDB might handle it automatically
-
     def create_table_from_arrow(self, table_name: str, arrow_table: pa.Table) -> None:
         """Create a DuckDB table directly from PyArrow Table data (batch mode)
 
@@ -1324,7 +1269,6 @@ class DuckDBBackend(DatabaseBackend):
 
         DuckDB automatically creates databases and schemas as needed!
         """
-
         # EXTENSIVE LOGGING
         duckdb_logger.info(
             "Creating DuckDB table from Arrow data (batch mode)",
@@ -1404,7 +1348,6 @@ class DuckDBBackend(DatabaseBackend):
 
         DuckDB will automatically handle fully qualified names and create databases/schemas as needed.
         """
-
         # EXTENSIVE LOGGING
         duckdb_logger.info(
             "Creating empty DuckDB table from Arrow schema (streaming mode)",
@@ -1465,7 +1408,6 @@ class DuckDBBackend(DatabaseBackend):
 
         Used in streaming mode to append each chunk to the existing table.
         """
-
         # EXTENSIVE LOGGING
         duckdb_logger.debug(
             "Appending Arrow data to existing DuckDB table",

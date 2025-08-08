@@ -1,0 +1,26 @@
+repos:
+  # Ruff for linting and formatting (essential checks only)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Run the linter with automatic fixes (only critical issues for pre-commit)
+      - id: ruff
+        name: ruff-lint
+        args: [--fix, --exit-non-zero-on-fix, --select=F811,E999,F821,F822,F823,F831,F401]
+        files: ^src/mpzsql/
+        exclude: ^src/mpzsql/flightsql/generated/
+      # Skip formatter in pre-commit to avoid conflicts
+      # - id: ruff-format
+      #   name: ruff-format
+      #   files: ^src/mpzsql/
+      #   exclude: ^src/mpzsql/flightsql/generated/
+
+  # Essential file hygiene only
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: debug-statements

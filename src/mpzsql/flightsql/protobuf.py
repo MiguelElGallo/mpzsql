@@ -1,5 +1,4 @@
-"""
-FlightSQL protobuf message definitions and handling.
+"""FlightSQL protobuf message definitions and handling.
 
 This module implements the protobuf message formats expected by FlightSQL clients,
 based on the Apache Arrow FlightSQL specification.
@@ -8,7 +7,6 @@ based on the Apache Arrow FlightSQL specification.
 import logging
 import struct
 import uuid
-from typing import Optional, Tuple
 
 import pyarrow as pa
 from google.protobuf import any_pb2
@@ -83,7 +81,7 @@ protobuf_logger.info("Protobuf logfire logger initialized")
 protobuf_log.info("Legacy protobuf logger initialized")
 
 
-def parse_any_command(command_bytes: bytes) -> Optional[any_pb2.Any]:
+def parse_any_command(command_bytes: bytes) -> any_pb2.Any | None:
     """Parse command bytes into a protobuf Any message."""
     try:
         # Guard against None/empty input (e.g., PATH descriptors)
@@ -117,8 +115,7 @@ def parse_any_command(command_bytes: bytes) -> Optional[any_pb2.Any]:
 
 
 class ActionCreatePreparedStatementRequest:
-    """
-    ActionCreatePreparedStatementRequest using generated protobuf class.
+    """ActionCreatePreparedStatementRequest using generated protobuf class.
     Now much simpler and more maintainable!
     """
 
@@ -134,9 +131,7 @@ class ActionCreatePreparedStatementRequest:
         self._generated.query = value
 
     def ParseFromString(self, data: bytes):
-        """
-        Parse using generated protobuf class - much simpler and more reliable!
-        """
+        """Parse using generated protobuf class - much simpler and more reliable!"""
         try:
             logger.info(
                 f"ActionCreatePreparedStatementRequest: parsing {len(data)} bytes: {data.hex()}"
@@ -165,8 +160,7 @@ class ActionCreatePreparedStatementRequest:
 
 
 class ActionClosePreparedStatementRequest:
-    """
-    Request to close a prepared statement.
+    """Request to close a prepared statement.
 
     Now using generated protobuf class for proper and reliable parsing!
     """
@@ -185,9 +179,7 @@ class ActionClosePreparedStatementRequest:
         self._generated.prepared_statement_handle = value
 
     def ParseFromString(self, data: bytes):
-        """
-        Parse using generated protobuf class - much simpler and more reliable!
-        """
+        """Parse using generated protobuf class - much simpler and more reliable!"""
         try:
             self._generated.ParseFromString(data)
             logger.info(
@@ -201,8 +193,7 @@ class ActionClosePreparedStatementRequest:
 
 
 class ActionBeginTransactionRequest:
-    """
-    Request to begin a transaction.
+    """Request to begin a transaction.
 
     Now using generated protobuf class for proper and reliable parsing!
     """
@@ -224,8 +215,7 @@ class ActionBeginTransactionRequest:
 
 
 class ActionEndTransactionRequest:
-    """
-    Request to end a transaction.
+    """Request to end a transaction.
 
     Now using generated protobuf class for proper and reliable parsing!
     """
@@ -565,8 +555,7 @@ class FlightSQLProtobuf:
         dataset_schema: bytes = None,
         parameter_schema: bytes = None,
     ) -> bytes:
-        """
-        Create ActionCreatePreparedStatementResult protobuf message.
+        """Create ActionCreatePreparedStatementResult protobuf message.
 
         Now using generated protobuf class for proper and reliable serialization!
         """
@@ -599,9 +588,8 @@ class FlightSQLProtobuf:
             return prepared_statement_handle
 
     @staticmethod
-    def parse_command_prepared_statement_query(command_bytes: bytes) -> Optional[str]:
-        """
-        Parse CommandPreparedStatementQuery protobuf message to extract prepared statement handle.
+    def parse_command_prepared_statement_query(command_bytes: bytes) -> str | None:
+        """Parse CommandPreparedStatementQuery protobuf message to extract prepared statement handle.
 
         Now using our improved CommandPreparedStatementQuery class!
         """
@@ -629,7 +617,6 @@ class FlightSQLProtobuf:
                         return handle
             except Exception as e:
                 logger.debug(f"Not a protobuf Any message: {e}")
-                pass
 
             # Fallback: try direct parsing
             command.ParseFromString(command_bytes)
@@ -680,9 +667,8 @@ class FlightSQLProtobuf:
         return None
 
     @staticmethod
-    def parse_command_statement_query(command_bytes: bytes) -> Optional[str]:
-        """
-        Parse CommandStatementQuery protobuf message to extract SQL.
+    def parse_command_statement_query(command_bytes: bytes) -> str | None:
+        """Parse CommandStatementQuery protobuf message to extract SQL.
 
         Now using generated protobuf class for proper and reliable parsing!
         """
@@ -766,14 +752,14 @@ class FlightSQLProtobuf:
     @staticmethod
     def parse_command_get_db_schemas(
         command_bytes: bytes,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Parse CommandGetDbSchemas protobuf message to extract catalog and schema filter.
+    ) -> tuple[str | None, str | None]:
+        """Parse CommandGetDbSchemas protobuf message to extract catalog and schema filter.
 
         Now using generated protobuf class for proper and reliable parsing!
 
         Returns:
             Tuple of (catalog, db_schema_filter_pattern)
+
         """
         try:
             protobuf_log.info(
@@ -803,14 +789,14 @@ class FlightSQLProtobuf:
     @staticmethod
     def parse_command_get_tables(
         command_bytes: bytes,
-    ) -> Tuple[Optional[str], Optional[str], Optional[str], list, bool]:
-        """
-        Parse CommandGetTables protobuf message to extract parameters.
+    ) -> tuple[str | None, str | None, str | None, list, bool]:
+        """Parse CommandGetTables protobuf message to extract parameters.
 
         Now using generated protobuf class for proper and reliable parsing!
 
         Returns:
             Tuple of (catalog, db_schema_filter_pattern, table_name_filter_pattern, table_types, include_schema)
+
         """
         try:
             protobuf_log.info(
@@ -924,9 +910,8 @@ class FlightSQLProtobuf:
         return struct.pack("<I", length) + handle_bytes
 
     @staticmethod
-    def parse_create_prepared_statement_request(action_body: bytes) -> Optional[str]:
-        """
-        Parse CreatePreparedStatement request to extract SQL.
+    def parse_create_prepared_statement_request(action_body: bytes) -> str | None:
+        """Parse CreatePreparedStatement request to extract SQL.
 
         Now using generated protobuf class for proper and reliable parsing!
         """
@@ -953,9 +938,8 @@ class FlightSQLProtobuf:
             return None
 
     @staticmethod
-    def parse_close_prepared_statement_request(action_body: bytes) -> Optional[bytes]:
-        """
-        Parse ClosePreparedStatement request to extract prepared statement handle.
+    def parse_close_prepared_statement_request(action_body: bytes) -> bytes | None:
+        """Parse ClosePreparedStatement request to extract prepared statement handle.
 
         Now using our improved ActionClosePreparedStatementRequest class!
         """
@@ -980,9 +964,8 @@ class FlightSQLProtobuf:
             return None
 
     @staticmethod
-    def parse_command_update(command_bytes: bytes) -> Optional[bytes]:
-        """
-        Parse CommandPreparedStatementUpdate protobuf message to extract prepared statement handle.
+    def parse_command_update(command_bytes: bytes) -> bytes | None:
+        """Parse CommandPreparedStatementUpdate protobuf message to extract prepared statement handle.
 
         Now using generated protobuf class for proper and reliable parsing!
         """
@@ -1064,9 +1047,8 @@ class FlightSQLProtobuf:
         return None
 
     @staticmethod
-    def parse_command_statement_update(command_bytes: bytes) -> Optional[str]:
-        """
-        Parse CommandStatementUpdate protobuf message to extract SQL.
+    def parse_command_statement_update(command_bytes: bytes) -> str | None:
+        """Parse CommandStatementUpdate protobuf message to extract SQL.
 
         Now using generated protobuf class for proper and reliable parsing!
         """
@@ -1340,8 +1322,7 @@ class FlightSQLProtobuf:
 
     @staticmethod
     def create_action_begin_transaction_result(transaction_id: str) -> bytes:
-        """
-        Create ActionBeginTransactionResult protobuf message.
+        """Create ActionBeginTransactionResult protobuf message.
 
         Now using generated protobuf class for proper and reliable serialization!
         """
