@@ -1,5 +1,4 @@
-"""
-FlightSQL protobuf message definitions and handling.
+"""FlightSQL protobuf message definitions and handling.
 
 This module implements the protobuf message formats expected by FlightSQL clients,
 based on the Apache Arrow FlightSQL specification.
@@ -16,9 +15,11 @@ from mpzsql.logfire_config import get_protobuf_logger
 # Import generated protobuf classes - these are required
 try:
     from .generated import FlightSql_pb2 as flight_sql_pb2
+    from .generated.Flight_pb2 import *  # noqa: F403, F401
+
     # Export all generated protobuf classes
     from .generated.FlightSql_pb2 import *  # noqa: F403, F401
-    from .generated.Flight_pb2 import *  # noqa: F403, F401
+
     PROTOBUF_AVAILABLE = True
 except ImportError as e:
     raise ImportError(
@@ -45,7 +46,9 @@ protobuf_log.info("Protobuf module initialized with generated classes")
 
 
 # Export generated protobuf classes directly with added constants
-ActionCreatePreparedStatementRequest = flight_sql_pb2.ActionCreatePreparedStatementRequest
+ActionCreatePreparedStatementRequest = (
+    flight_sql_pb2.ActionCreatePreparedStatementRequest
+)
 ActionClosePreparedStatementRequest = flight_sql_pb2.ActionClosePreparedStatementRequest
 ActionBeginTransactionRequest = flight_sql_pb2.ActionBeginTransactionRequest
 
@@ -92,9 +95,7 @@ class FlightSQLProtobuf:
     COMMAND_STATEMENT_UPDATE_TYPE_URL = (
         "type.googleapis.com/arrow.flight.protocol.sql.CommandStatementUpdate"
     )
-    ACTION_CREATE_PREPARED_STATEMENT_RESULT_TYPE_URL = (
-        "type.googleapis.com/arrow.flight.protocol.sql.ActionCreatePreparedStatementResult"
-    )
+    ACTION_CREATE_PREPARED_STATEMENT_RESULT_TYPE_URL = "type.googleapis.com/arrow.flight.protocol.sql.ActionCreatePreparedStatementResult"
     COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL = (
         "type.googleapis.com/arrow.flight.protocol.sql.CommandPreparedStatementQuery"
     )
@@ -127,12 +128,8 @@ class FlightSQLProtobuf:
     ACTION_END_TRANSACTION_REQUEST_TYPE_URL = (
         "type.googleapis.com/arrow.flight.protocol.sql.ActionEndTransactionRequest"
     )
-    ACTION_CREATE_PREPARED_STATEMENT_REQUEST_TYPE_URL = (
-        "type.googleapis.com/arrow.flight.protocol.sql.ActionCreatePreparedStatementRequest"
-    )
-    ACTION_CLOSE_PREPARED_STATEMENT_REQUEST_TYPE_URL = (
-        "type.googleapis.com/arrow.flight.protocol.sql.ActionClosePreparedStatementRequest"
-    )
+    ACTION_CREATE_PREPARED_STATEMENT_REQUEST_TYPE_URL = "type.googleapis.com/arrow.flight.protocol.sql.ActionCreatePreparedStatementRequest"
+    ACTION_CLOSE_PREPARED_STATEMENT_REQUEST_TYPE_URL = "type.googleapis.com/arrow.flight.protocol.sql.ActionClosePreparedStatementRequest"
     ACTION_BEGIN_TRANSACTION_RESULT_TYPE_URL = (
         "type.googleapis.com/arrow.flight.protocol.sql.ActionBeginTransactionResult"
     )
@@ -145,27 +142,33 @@ class FlightSQLProtobuf:
     ) -> bytes:
         """Create ActionCreatePreparedStatementResult using generated protobuf."""
         result = flight_sql_pb2.ActionCreatePreparedStatementResult()
-        result.prepared_statement_handle = prepared_statement_handle.encode() if isinstance(prepared_statement_handle, str) else prepared_statement_handle
+        result.prepared_statement_handle = (
+            prepared_statement_handle.encode()
+            if isinstance(prepared_statement_handle, str)
+            else prepared_statement_handle
+        )
         if dataset_schema:
-            if hasattr(dataset_schema, 'serialize'):
+            if hasattr(dataset_schema, "serialize"):
                 # It's a PyArrow schema, serialize it to bytes
                 result.dataset_schema = dataset_schema.serialize().to_pybytes()
             else:
                 # It's already bytes
                 result.dataset_schema = dataset_schema
         if parameter_schema:
-            if hasattr(parameter_schema, 'serialize'):
+            if hasattr(parameter_schema, "serialize"):
                 # It's a PyArrow schema, serialize it to bytes
                 result.parameter_schema = parameter_schema.serialize().to_pybytes()
             else:
                 # It's already bytes
                 result.parameter_schema = parameter_schema
-        
+
         # Wrap in Any message
         any_message = any_pb2.Any()
         any_message.Pack(result)
-        
-        protobuf_logger.info("Created ActionCreatePreparedStatementResult using generated protobuf")
+
+        protobuf_logger.info(
+            "Created ActionCreatePreparedStatementResult using generated protobuf"
+        )
         return any_message.SerializeToString()
 
     # Schema generation methods using PyArrow (matching the old implementation)
@@ -177,43 +180,51 @@ class FlightSQLProtobuf:
     @staticmethod
     def get_db_schemas_schema():
         """Get the standard Flight SQL schema for GetDbSchemas command."""
-        return pa.schema([
-            ("catalog_name", pa.string()),
-            ("db_schema_name", pa.string()),
-        ])
+        return pa.schema(
+            [
+                ("catalog_name", pa.string()),
+                ("db_schema_name", pa.string()),
+            ]
+        )
 
     @staticmethod
     def get_tables_schema():
         """Get the standard Flight SQL schema for GetTables command."""
-        return pa.schema([
-            ("catalog_name", pa.string()),
-            ("db_schema_name", pa.string()),
-            ("table_name", pa.string()),
-            ("table_type", pa.string()),
-            ("table_remarks", pa.string()),
-        ])
+        return pa.schema(
+            [
+                ("catalog_name", pa.string()),
+                ("db_schema_name", pa.string()),
+                ("table_name", pa.string()),
+                ("table_type", pa.string()),
+                ("table_remarks", pa.string()),
+            ]
+        )
 
     @staticmethod
     def get_tables_schema_minimal():
         """Get the minimal Flight SQL schema for GetTables command without table_schema."""
-        return pa.schema([
-            ("catalog_name", pa.string()),
-            ("db_schema_name", pa.string()),
-            ("table_name", pa.string()),
-            ("table_type", pa.string()),
-        ])
+        return pa.schema(
+            [
+                ("catalog_name", pa.string()),
+                ("db_schema_name", pa.string()),
+                ("table_name", pa.string()),
+                ("table_type", pa.string()),
+            ]
+        )
 
     @staticmethod
     def get_tables_schema_with_included_schema():
         """Get the extended Flight SQL schema for GetTables command with table schema included."""
-        return pa.schema([
-            ("catalog_name", pa.string()),
-            ("db_schema_name", pa.string()),
-            ("table_name", pa.string()),
-            ("table_type", pa.string()),
-            ("table_remarks", pa.string()),
-            ("table_schema", pa.binary()),
-        ])
+        return pa.schema(
+            [
+                ("catalog_name", pa.string()),
+                ("db_schema_name", pa.string()),
+                ("table_name", pa.string()),
+                ("table_type", pa.string()),
+                ("table_remarks", pa.string()),
+                ("table_schema", pa.binary()),
+            ]
+        )
 
     @staticmethod
     def get_table_types_schema():
@@ -223,87 +234,100 @@ class FlightSQLProtobuf:
     @staticmethod
     def get_columns_schema():
         """Get the standard Flight SQL schema for GetColumns command."""
-        return pa.schema([
-            ("catalog_name", pa.string()),
-            ("db_schema_name", pa.string()),
-            ("table_name", pa.string()),
-            ("column_name", pa.string()),
-            ("data_type", pa.int32()),
-            ("type_name", pa.string()),
-            ("column_size", pa.int32()),
-            ("buffer_length", pa.int32()),
-            ("decimal_digits", pa.int32()),
-            ("num_prec_radix", pa.int32()),
-            ("nullable", pa.int32()),
-            ("remarks", pa.string()),
-            ("column_def", pa.string()),
-            ("sql_data_type", pa.int32()),
-            ("sql_datetime_sub", pa.int32()),
-            ("char_octet_length", pa.int32()),
-            ("ordinal_position", pa.int32()),
-            ("is_nullable", pa.string()),
-            ("scope_catalog", pa.string()),
-            ("scope_schema", pa.string()),
-            ("scope_table", pa.string()),
-            ("source_data_type", pa.int32()),
-            ("is_autoincrement", pa.string()),
-            ("is_generatedcolumn", pa.string()),
-        ])
+        return pa.schema(
+            [
+                ("catalog_name", pa.string()),
+                ("db_schema_name", pa.string()),
+                ("table_name", pa.string()),
+                ("column_name", pa.string()),
+                ("data_type", pa.int32()),
+                ("type_name", pa.string()),
+                ("column_size", pa.int32()),
+                ("buffer_length", pa.int32()),
+                ("decimal_digits", pa.int32()),
+                ("num_prec_radix", pa.int32()),
+                ("nullable", pa.int32()),
+                ("remarks", pa.string()),
+                ("column_def", pa.string()),
+                ("sql_data_type", pa.int32()),
+                ("sql_datetime_sub", pa.int32()),
+                ("char_octet_length", pa.int32()),
+                ("ordinal_position", pa.int32()),
+                ("is_nullable", pa.string()),
+                ("scope_catalog", pa.string()),
+                ("scope_schema", pa.string()),
+                ("scope_table", pa.string()),
+                ("source_data_type", pa.int32()),
+                ("is_autoincrement", pa.string()),
+                ("is_generatedcolumn", pa.string()),
+            ]
+        )
 
     @staticmethod
     def get_sql_info_schema():
         """Get the standard Flight SQL schema for GetSqlInfo command."""
-        return pa.schema([
-            ("info_name", pa.uint32()),
-            ("value", pa.string()),
-        ])
+        return pa.schema(
+            [
+                ("info_name", pa.uint32()),
+                ("value", pa.string()),
+            ]
+        )
 
     @staticmethod
     def get_sql_info_schema_with_dense_union():
         """Get the proper Flight SQL schema for GetSqlInfo command with dense_union."""
         # Create a dense union for the value field to support different types
-        union_type = pa.union([
-            pa.field("string_value", pa.string()),
-            pa.field("int_value", pa.int64()),
-            pa.field("bool_value", pa.bool_()),
-        ], mode="dense")
-        
-        return pa.schema([
-            ("info_name", pa.uint32()),
-            ("value", union_type),
-        ])
+        union_type = pa.union(
+            [
+                pa.field("string_value", pa.string()),
+                pa.field("int_value", pa.int64()),
+                pa.field("bool_value", pa.bool_()),
+            ],
+            mode="dense",
+        )
+
+        return pa.schema(
+            [
+                ("info_name", pa.uint32()),
+                ("value", union_type),
+            ]
+        )
 
     @staticmethod
     def get_primary_keys_schema():
         """Get the standard Flight SQL schema for GetPrimaryKeys command."""
-        return pa.schema([
-            ("catalog_name", pa.string()),
-            ("schema_name", pa.string()),
-            ("table_name", pa.string()),
-            ("column_name", pa.string()),
-            ("key_sequence", pa.int32()),
-            ("key_name", pa.string()),
-        ])
+        return pa.schema(
+            [
+                ("catalog_name", pa.string()),
+                ("schema_name", pa.string()),
+                ("table_name", pa.string()),
+                ("column_name", pa.string()),
+                ("key_sequence", pa.int32()),
+                ("key_name", pa.string()),
+            ]
+        )
 
     @staticmethod
     def get_imported_keys_schema():
         """Get the standard Flight SQL schema for GetImportedKeys command."""
-        return pa.schema([
-            ("pk_catalog_name", pa.string()),
-            ("pk_schema_name", pa.string()),
-            ("pk_table_name", pa.string()),
-            ("pk_column_name", pa.string()),
-            ("fk_catalog_name", pa.string()),
-            ("fk_schema_name", pa.string()),
-            ("fk_table_name", pa.string()),
-            ("fk_column_name", pa.string()),
-            ("key_sequence", pa.int32()),
-            ("update_rule", pa.int32()),
-            ("delete_rule", pa.int32()),
-            ("fk_name", pa.string()),
-            ("pk_name", pa.string()),
-            ("deferrability", pa.int32()),
-        ])
+        return pa.schema(
+            [
+                ("pk_catalog_name", pa.string()),
+                ("pk_schema_name", pa.string()),
+                ("pk_table_name", pa.string()),
+                ("pk_column_name", pa.string()),
+                ("fk_catalog_name", pa.string()),
+                ("fk_schema_name", pa.string()),
+                ("fk_table_name", pa.string()),
+                ("fk_column_name", pa.string()),
+                ("key_sequence", pa.int32()),
+                ("update_rule", pa.int32()),
+                ("delete_rule", pa.int32()),
+                ("fk_name", pa.string()),
+                ("pk_name", pa.string()),
+                ("deferrability", pa.int32()),
+            ]
+        )
 
     @staticmethod
     def get_exported_keys_schema():
@@ -324,13 +348,13 @@ class FlightSQLProtobuf:
     @staticmethod
     def encode_prepared_statement_handle(handle: str) -> bytes:
         """Encode a prepared statement handle as bytes."""
-        return handle.encode('utf-8')
+        return handle.encode("utf-8")
 
     @staticmethod
     def create_action_begin_transaction_result(transaction_id: str) -> bytes:
         """Create ActionBeginTransactionResult using generated protobuf."""
         result = flight_sql_pb2.ActionBeginTransactionResult()
-        result.transaction_id = transaction_id.encode('utf-8')
+        result.transaction_id = transaction_id.encode("utf-8")
         return result.SerializeToString()
 
     @staticmethod
@@ -347,28 +371,23 @@ class FlightSQLProtobuf:
             "REAL": pa.float32(),
             "DECIMAL": pa.decimal128(38, 18),
             "NUMERIC": pa.decimal128(38, 18),
-            
             # String types
             "VARCHAR": pa.string(),
             "CHAR": pa.string(),
             "TEXT": pa.string(),
             "STRING": pa.string(),
-            
             # Binary types
             "BINARY": pa.binary(),
             "VARBINARY": pa.binary(),
             "BLOB": pa.binary(),
-            
             # Date/time types
             "DATE": pa.date32(),
             "TIME": pa.time64("us"),
             "TIMESTAMP": pa.timestamp("us"),
             "TIMESTAMPTZ": pa.timestamp("us", tz="UTC"),
-            
             # Boolean
             "BOOLEAN": pa.bool_(),
             "BOOL": pa.bool_(),
-            
             # JSON (as string for now)
             "JSON": pa.string(),
         }
@@ -382,31 +401,31 @@ class FlightSQLProtobuf:
             command = CommandStatementQuery()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_STATEMENT_UPDATE_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_STATEMENT_UPDATE_TYPE_URL:
             command = CommandStatementUpdate()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
             command = CommandGetTables()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
             command = CommandGetCatalogs()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
             command = CommandGetDbSchemas()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
             command = CommandGetSqlInfo()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL:
             command = CommandPreparedStatementQuery()
             command.ParseFromString(any_message.value)
             return command
-        elif type_url == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_UPDATE_TYPE_URL:
+        if type_url == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_UPDATE_TYPE_URL:
             command = CommandPreparedStatementUpdate()
             command.ParseFromString(any_message.value)
             return command
@@ -429,7 +448,7 @@ class FlightSQLProtobuf:
                 command = CommandGetDbSchemas()
                 command.ParseFromString(command_bytes)
                 return command
-        
+
         command = CommandGetDbSchemas()
         command.ParseFromString(any_message.value)
         return command
@@ -444,40 +463,51 @@ class FlightSQLProtobuf:
                 command = CommandGetTables()
                 command.ParseFromString(any_message.value)
                 return (
-                    command.catalog if command.HasField('catalog') else None,
-                    command.db_schema_filter_pattern if command.HasField('db_schema_filter_pattern') else None,
-                    command.table_name_filter_pattern if command.HasField('table_name_filter_pattern') else None,
+                    command.catalog if command.HasField("catalog") else None,
+                    command.db_schema_filter_pattern
+                    if command.HasField("db_schema_filter_pattern")
+                    else None,
+                    command.table_name_filter_pattern
+                    if command.HasField("table_name_filter_pattern")
+                    else None,
                     list(command.table_types),
-                    command.include_schema
+                    command.include_schema,
                 )
-            else:
-                # Parse as Any message first
-                any_message = parse_any_command(command_bytes)
-                if any_message:
-                    command = CommandGetTables()
-                    command.ParseFromString(any_message.value)
-                    return (
-                        command.catalog if command.HasField('catalog') else None,
-                        command.db_schema_filter_pattern if command.HasField('db_schema_filter_pattern') else None,
-                        command.table_name_filter_pattern if command.HasField('table_name_filter_pattern') else None,
-                        list(command.table_types),
-                        command.include_schema
-                    )
-                
-                # Fallback: try to parse directly as protobuf
-                try:
-                    command = CommandGetTables()
-                    command.ParseFromString(command_bytes)
-                    return (
-                        command.catalog if command.HasField('catalog') else None,
-                        command.db_schema_filter_pattern if command.HasField('db_schema_filter_pattern') else None,
-                        command.table_name_filter_pattern if command.HasField('table_name_filter_pattern') else None,
-                        list(command.table_types),
-                        command.include_schema
-                    )
-                except Exception:
-                    # For invalid data, return default tuple
-                    return (None, None, None, [], False)
+            # Parse as Any message first
+            any_message = parse_any_command(command_bytes)
+            if any_message:
+                command = CommandGetTables()
+                command.ParseFromString(any_message.value)
+                return (
+                    command.catalog if command.HasField("catalog") else None,
+                    command.db_schema_filter_pattern
+                    if command.HasField("db_schema_filter_pattern")
+                    else None,
+                    command.table_name_filter_pattern
+                    if command.HasField("table_name_filter_pattern")
+                    else None,
+                    list(command.table_types),
+                    command.include_schema,
+                )
+
+            # Fallback: try to parse directly as protobuf
+            try:
+                command = CommandGetTables()
+                command.ParseFromString(command_bytes)
+                return (
+                    command.catalog if command.HasField("catalog") else None,
+                    command.db_schema_filter_pattern
+                    if command.HasField("db_schema_filter_pattern")
+                    else None,
+                    command.table_name_filter_pattern
+                    if command.HasField("table_name_filter_pattern")
+                    else None,
+                    list(command.table_types),
+                    command.include_schema,
+                )
+            except Exception:
+                # For invalid data, return default tuple
+                return (None, None, None, [], False)
         except Exception as e:
             protobuf_logger.debug(f"Failed to parse command get tables: {e}")
             # Return default tuple for invalid data
@@ -492,30 +522,32 @@ class FlightSQLProtobuf:
                 any_message = command_bytes
                 command = CommandStatementQuery()
                 command.ParseFromString(any_message.value)
-                return command.query if hasattr(command, 'query') else ""
-            else:
-                # Parse as Any message first
-                any_message = parse_any_command(command_bytes)
-                if any_message:
-                    command = CommandStatementQuery()
-                    command.ParseFromString(any_message.value)
-                    return command.query if hasattr(command, 'query') else ""
-                
-                # Fallback: try to parse directly as protobuf
+                return command.query if hasattr(command, "query") else ""
+            # Parse as Any message first
+            any_message = parse_any_command(command_bytes)
+            if any_message:
+                command = CommandStatementQuery()
+                command.ParseFromString(any_message.value)
+                return command.query if hasattr(command, "query") else ""
+
+            # Fallback: try to parse directly as protobuf
+            try:
+                command = CommandStatementQuery()
+                command.ParseFromString(command_bytes)
+                return command.query if hasattr(command, "query") else ""
+            except Exception:
+                # Last fallback: if it looks like raw SQL, return it as string
                 try:
-                    command = CommandStatementQuery()
-                    command.ParseFromString(command_bytes)
-                    return command.query if hasattr(command, 'query') else ""
+                    decoded = command_bytes.decode("utf-8")
+                    # Simple heuristic: if it contains SQL keywords, treat as SQL
+                    if any(
+                        keyword.upper() in decoded.upper()
+                        for keyword in ["SELECT", "UPDATE", "INSERT", "DELETE"]
+                    ):
+                        return decoded
                 except Exception:
-                    # Last fallback: if it looks like raw SQL, return it as string
-                    try:
-                        decoded = command_bytes.decode('utf-8')
-                        # Simple heuristic: if it contains SQL keywords, treat as SQL
-                        if any(keyword.upper() in decoded.upper() for keyword in ['SELECT', 'UPDATE', 'INSERT', 'DELETE']):
-                            return decoded
-                    except Exception:
-                        pass
-                    return None
+                    pass
+                return None
         except Exception as e:
             protobuf_logger.debug(f"Failed to parse command statement query: {e}")
             return None
@@ -529,30 +561,32 @@ class FlightSQLProtobuf:
                 any_message = command_bytes
                 command = CommandStatementUpdate()
                 command.ParseFromString(any_message.value)
-                return command.query if hasattr(command, 'query') else ""
-            else:
-                # Parse as Any message first
-                any_message = parse_any_command(command_bytes)
-                if any_message:
-                    command = CommandStatementUpdate()
-                    command.ParseFromString(any_message.value)
-                    return command.query if hasattr(command, 'query') else ""
-                
-                # Fallback: try to parse directly as protobuf
+                return command.query if hasattr(command, "query") else ""
+            # Parse as Any message first
+            any_message = parse_any_command(command_bytes)
+            if any_message:
+                command = CommandStatementUpdate()
+                command.ParseFromString(any_message.value)
+                return command.query if hasattr(command, "query") else ""
+
+            # Fallback: try to parse directly as protobuf
+            try:
+                command = CommandStatementUpdate()
+                command.ParseFromString(command_bytes)
+                return command.query if hasattr(command, "query") else ""
+            except Exception:
+                # Last fallback: if it looks like raw SQL, return it as string
                 try:
-                    command = CommandStatementUpdate()
-                    command.ParseFromString(command_bytes)
-                    return command.query if hasattr(command, 'query') else ""
+                    decoded = command_bytes.decode("utf-8")
+                    # Simple heuristic: if it contains SQL keywords, treat as SQL
+                    if any(
+                        keyword.upper() in decoded.upper()
+                        for keyword in ["SELECT", "UPDATE", "INSERT", "DELETE"]
+                    ):
+                        return decoded
                 except Exception:
-                    # Last fallback: if it looks like raw SQL, return it as string
-                    try:
-                        decoded = command_bytes.decode('utf-8')
-                        # Simple heuristic: if it contains SQL keywords, treat as SQL
-                        if any(keyword.upper() in decoded.upper() for keyword in ['SELECT', 'UPDATE', 'INSERT', 'DELETE']):
-                            return decoded
-                    except Exception:
-                        pass
-                    return None
+                    pass
+                return None
         except Exception as e:
             protobuf_logger.debug(f"Failed to parse command statement update: {e}")
             return None
@@ -567,24 +601,25 @@ class FlightSQLProtobuf:
                 command = CommandPreparedStatementQuery()
                 command.ParseFromString(any_message.value)
                 return command
-            else:
-                # Parse as Any message first
-                any_message = parse_any_command(command_bytes)
-                if any_message:
-                    command = CommandPreparedStatementQuery()
-                    command.ParseFromString(any_message.value)
-                    return command
-                
-                # Fallback: try to parse directly as protobuf
-                try:
-                    command = CommandPreparedStatementQuery()
-                    command.ParseFromString(command_bytes)
-                    return command
-                except Exception:
-                    # For invalid data, return None
-                    return None
+            # Parse as Any message first
+            any_message = parse_any_command(command_bytes)
+            if any_message:
+                command = CommandPreparedStatementQuery()
+                command.ParseFromString(any_message.value)
+                return command
+
+            # Fallback: try to parse directly as protobuf
+            try:
+                command = CommandPreparedStatementQuery()
+                command.ParseFromString(command_bytes)
+                return command
+            except Exception:
+                # For invalid data, return None
+                return None
         except Exception as e:
-            protobuf_logger.debug(f"Failed to parse command prepared statement query: {e}")
+            protobuf_logger.debug(
+                f"Failed to parse command prepared statement query: {e}"
+            )
             return None
 
     @staticmethod
@@ -601,7 +636,9 @@ class FlightSQLProtobuf:
             request.ParseFromString(command_bytes)
             return request
         except Exception as e:
-            protobuf_logger.debug(f"Failed to parse create prepared statement request: {e}")
+            protobuf_logger.debug(
+                f"Failed to parse create prepared statement request: {e}"
+            )
             return None
 
     @staticmethod
@@ -612,7 +649,9 @@ class FlightSQLProtobuf:
             request.ParseFromString(command_bytes)
             return request
         except Exception as e:
-            protobuf_logger.debug(f"Failed to parse close prepared statement request: {e}")
+            protobuf_logger.debug(
+                f"Failed to parse close prepared statement request: {e}"
+            )
             return None
 
 
@@ -650,13 +689,13 @@ __all__ = [
     "FlightSQLProtobuf",
     "parse_any_command",
     "CommandStatementQuery",
-    "CommandStatementUpdate", 
+    "CommandStatementUpdate",
     "CommandPreparedStatementQuery",
     "PreparedStatementQuery",  # alias
     "CommandGetCatalogs",
     "CommandGetDbSchemas",
     "CommandGetSqlInfo",
-    "CommandGetTables", 
+    "CommandGetTables",
     "CommandGetTableTypes",
     "ActionCreatePreparedStatementRequest",
     "ActionClosePreparedStatementRequest",
@@ -665,13 +704,14 @@ __all__ = [
     "CommandStatementQuery",
     "CommandStatementUpdate",
     "CommandPreparedStatementQuery",
-    "CommandPreparedStatementUpdate", 
+    "CommandPreparedStatementUpdate",
     "CommandGetCatalogs",
     "CommandGetColumns",
     "CommandGetDbSchemas",
     "DoPutUpdateResult",
     "parse_any_command",
 ]
+
 
 # Alias for compatibility with minimal.py - maintains original API exactly
 def parse_any_command(command_bytes):

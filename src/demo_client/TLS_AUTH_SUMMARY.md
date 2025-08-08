@@ -32,7 +32,7 @@ This document summarizes the **SUCCESSFUL** TLS and authentication implementatio
 
 ### **All Original Requirements COMPLETE:**
 1. ✅ Generate self-signed certificate
-2. ✅ Start server with user/password/certificate  
+2. ✅ Start server with user/password/certificate
 3. ✅ Client scripts with user/password/certificate
 4. ✅ Full TLS + Authentication integration
 
@@ -114,7 +114,7 @@ cd src/demo_client/
 🧪 MPZSQL Basic Authentication Test
 ===================================
 ✅ Server startup without TLS
-✅ Client connection test  
+✅ Client connection test
 ✅ Simple query execution
 ✅ Advanced query execution
 ✅ Multiple query types (strings, timestamps, expressions)
@@ -186,7 +186,7 @@ python3 -m mpzsql.cli --hostname localhost --port 8080 --tls-cert certs/server.c
 ✅ Connected to FlightSQL server
 🔍 Executing query: SELECT 1 as test_number, 'Hello MPZSQL' as test_message
 ✅ Query executed successfully. Rows: 1
-        Query Results         
+        Query Results
 ┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃ test_number ┃ test_message ┃
 ┡━━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩

@@ -1,5 +1,4 @@
-"""
-MPZSQL FlightSQL server implementation.
+"""MPZSQL FlightSQL server implementation.
 
 This module implements the core FlightSQL server using Apache Arrow Flight
 with support for DuckDB and SQLite backends.
@@ -15,25 +14,20 @@ This has been kept for reference but should be cleaned up in the future.
 import logging
 import signal
 import threading
-from typing import Optional
 
 import pyarrow.flight as pf
 from rich.console import Console
-
-from mpzsql.logfire_config import get_main_logger
 
 from mpzsql.backends.base import DatabaseBackend
 from mpzsql.backends.duckdb_backend import DuckDBBackend
 from mpzsql.backends.sqlite_backend import SQLiteBackend
 from mpzsql.config import ServerConfig
-
 from mpzsql.flightsql.minimal import MinimalFlightSQLServer
+from mpzsql.logfire_config import get_main_logger
 
 console = Console()
 logger = logging.getLogger(__name__)
 server_logger = get_main_logger()
-
-
 
 
 class MPZSQLServer:
@@ -43,7 +37,7 @@ class MPZSQLServer:
         """Initialize the server."""
         self.config = config
         self.duckdb_connection = duckdb_connection
-        self.flight_service: Optional[pf.FlightServerBase] = None
+        self.flight_service: pf.FlightServerBase | None = None
         self._shutdown_event = threading.Event()
 
         # Setup signal handlers
@@ -59,10 +53,9 @@ class MPZSQLServer:
         """Create the appropriate database backend."""
         if self.config.backend == "duckdb":
             return DuckDBBackend(self.config, self.duckdb_connection)
-        elif self.config.backend == "sqlite":
+        if self.config.backend == "sqlite":
             return SQLiteBackend(self.config)
-        else:
-            raise ValueError(f"Unknown backend: {self.config.backend}")
+        raise ValueError(f"Unknown backend: {self.config.backend}")
 
     def start(self):
         """Start the server."""
@@ -94,7 +87,7 @@ class MPZSQLServer:
             # Use MinimalFlightSQLServer - this is the ACTIVE implementation that provides
             # proper JDBC compatibility with correct FlightSQL protocol handling.
             # (MPZSQLFlightServer in this file is legacy and not used)
-            
+
             # Pass both listen and advertised locations to the FlightSQL server
             # Note: This assumes MinimalFlightSQLServer supports the advertised_location parameter.
             # If it doesn't, we may need to modify that class as well.
@@ -105,8 +98,12 @@ class MPZSQLServer:
                 )
             except TypeError:
                 # Fallback to old signature for backward compatibility
-                console.print("[yellow]Warning: MinimalFlightSQLServer doesn't support advertised location yet, using listen location[/yellow]")
-                self.flight_service = MinimalFlightSQLServer(backend, self.config, listen_location)
+                console.print(
+                    "[yellow]Warning: MinimalFlightSQLServer doesn't support advertised location yet, using listen location[/yellow]"
+                )
+                self.flight_service = MinimalFlightSQLServer(
+                    backend, self.config, listen_location
+                )
 
             console.print(
                 f"[green]✓[/green] Server started on {self.config.hostname}:{self.config.port}"

@@ -195,7 +195,7 @@ python3 demo_tls_query.py
 
 This will show:
 - ✅ TLS connection establishment
-- ✅ Authentication over TLS  
+- ✅ Authentication over TLS
 - ✅ Multiple SQL queries executed successfully
 - ✅ Results displayed in formatted tables
 

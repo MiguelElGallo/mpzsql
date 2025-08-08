@@ -13,27 +13,27 @@ permissions:
 jobs:
   e2e-test:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install uv
       uses: astral-sh/setup-uv@v4
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
-    
+
     - name: Set up Python 3.12
       run: uv python install 3.12
-    
+
     - name: Install dependencies
       run: uv sync --all-extras --dev
-    
+
     - name: Install OpenSSL for certificate validation
       run: |
         sudo apt-get update
         sudo apt-get install -y openssl
-    
+
     - name: Display Certificate Information
       env:
         TLS_CERTIFICATE: ${{ secrets.TLS_CERTIFICATE }}
@@ -51,10 +51,10 @@ jobs:
         echo "   Algorithm: $(echo "$TLS_CERTIFICATE" | openssl x509 -noout -text | grep "Signature Algorithm" | head -1 | sed 's/.*Signature Algorithm: /   /')"
         echo "   Key Type: $(echo "$TLS_CERTIFICATE" | openssl x509 -noout -text | grep "Public Key Algorithm" | sed 's/.*Public Key Algorithm: /   /')"
         echo ""
-    
+
     - name: Make test scripts executable
       run: chmod +x src/demo_client/scripts/*.sh
-    
+
     - name: Run End-to-End TLS Authentication Test
       env:
         TLS_CERTIFICATE: ${{ secrets.TLS_CERTIFICATE }}
@@ -63,7 +63,7 @@ jobs:
         cd src/demo_client
         source ../../.venv/bin/activate
         PYTHONPATH=../.. ./scripts/test_tls_auth.sh
-      
+
     - name: Upload test logs on failure
       if: failure()
       uses: actions/upload-artifact@v4

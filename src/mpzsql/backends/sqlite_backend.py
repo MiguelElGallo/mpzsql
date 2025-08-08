@@ -1,5 +1,4 @@
-"""
-SQLite backend implementation for MPZSQL.
+"""SQLite backend implementation for MPZSQL.
 
 This module provides the SQLite-specific implementation of the database backend,
 including query execution, schema introspection, and metadata operations.
@@ -8,7 +7,6 @@ including query execution, schema introspection, and metadata operations.
 import logging
 import sqlite3
 import threading
-from typing import List, Optional, Tuple
 
 import pyarrow as pa
 
@@ -70,7 +68,7 @@ class SQLiteBackend(DatabaseBackend):
                 logger.error(f"SQL execution failed: {e}")
                 raise
 
-    def execute_query(self, query: str, params: Optional[List] = None) -> pa.Table:
+    def execute_query(self, query: str, params: list | None = None) -> pa.Table:
         """Execute a query and return an Arrow Table."""
         with self._lock:  # Ensure thread-safe access
             try:
@@ -156,9 +154,9 @@ class SQLiteBackend(DatabaseBackend):
                     return pa.schema([pa.field("result", pa.string())])
 
                 except Exception:
-                    raise e
+                    raise e from None
 
-    def execute_update(self, query: str, params: Optional[List] = None) -> int:
+    def execute_update(self, query: str, params: list | None = None) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
         with self._lock:  # Ensure thread-safe access
             try:
@@ -195,7 +193,7 @@ class SQLiteBackend(DatabaseBackend):
                 logger.warning(f"Could not get catalogs: {e}")
                 return pa.table({"catalog_name": ["main"]})
 
-    def get_schemas(self, catalog: Optional[str] = None) -> List[Tuple[str, str]]:
+    def get_schemas(self, catalog: str | None = None) -> list[tuple[str, str]]:
         """Get available schemas for a catalog, returns (catalog, schema) tuples."""
         # SQLite doesn't have schemas in the traditional sense
         # Everything is in the main schema
@@ -204,10 +202,10 @@ class SQLiteBackend(DatabaseBackend):
 
     def get_tables(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter_pattern: Optional[str] = None,
-        table_name_filter_pattern: Optional[str] = None,
-        table_types: Optional[List[str]] = None,
+        catalog: str | None = None,
+        db_schema_filter_pattern: str | None = None,
+        table_name_filter_pattern: str | None = None,
+        table_types: list[str] | None = None,
         include_schema: bool = False,
     ) -> pa.Table:
         """Get available tables with their metadata as an Arrow table."""
@@ -217,7 +215,7 @@ class SQLiteBackend(DatabaseBackend):
 
                 # Get all tables and views
                 query = """
-                SELECT name, type FROM sqlite_master 
+                SELECT name, type FROM sqlite_master
                 WHERE type IN ('table', 'view')
                 """
 
@@ -288,7 +286,7 @@ class SQLiteBackend(DatabaseBackend):
                     }
                 )
 
-    def get_sql_info(self, info_codes: List[int]) -> pa.Table:
+    def get_sql_info(self, info_codes: list[int]) -> pa.Table:
         """Get SQL info for the given info codes as an Arrow table."""
         # Basic implementation for SQLite
         info_names = []
@@ -309,8 +307,8 @@ class SQLiteBackend(DatabaseBackend):
 
     def get_db_schemas(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter_pattern: Optional[str] = None,
+        catalog: str | None = None,
+        db_schema_filter_pattern: str | None = None,
     ) -> pa.Table:
         """Get available schemas for a catalog as an Arrow table."""
         # SQLite doesn't have schemas in the traditional sense
@@ -320,10 +318,10 @@ class SQLiteBackend(DatabaseBackend):
 
     def get_columns(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter_pattern: Optional[str] = None,
-        table_name_filter_pattern: Optional[str] = None,
-        column_name_filter_pattern: Optional[str] = None,
+        catalog: str | None = None,
+        db_schema_filter_pattern: str | None = None,
+        table_name_filter_pattern: str | None = None,
+        column_name_filter_pattern: str | None = None,
     ) -> pa.Table:
         """Get columns for tables as an Arrow table."""
         with self._lock:  # Ensure thread-safe access
@@ -395,12 +393,12 @@ class SQLiteBackend(DatabaseBackend):
                     }
                 )
 
-    def get_catalogs_old(self) -> List[str]:
+    def get_catalogs_old(self) -> list[str]:
         """Get available catalogs (deprecated method for backward compatibility)."""
         catalogs_table = self.get_catalogs()
         return catalogs_table.column("catalog_name").to_pylist()
 
-    def get_schemas_old(self, catalog: Optional[str] = None) -> List[str]:
+    def get_schemas_old(self, catalog: str | None = None) -> list[str]:
         """Get available schemas for a catalog (deprecated method for backward compatibility)."""
         # SQLite doesn't have schemas in the traditional sense
         # Everything is in the main schema
@@ -408,11 +406,11 @@ class SQLiteBackend(DatabaseBackend):
 
     def get_tables_old(
         self,
-        catalog: Optional[str] = None,
-        db_schema_filter: Optional[str] = None,
-        table_filter: Optional[str] = None,
-        table_types: Optional[List[str]] = None,
-    ) -> List[Tuple[str, str, str, str]]:
+        catalog: str | None = None,
+        db_schema_filter: str | None = None,
+        table_filter: str | None = None,
+        table_types: list[str] | None = None,
+    ) -> list[tuple[str, str, str, str]]:
         """Get available tables with their metadata (deprecated method for backward compatibility)."""
         tables_table = self.get_tables(
             catalog, db_schema_filter, table_filter, table_types
@@ -441,7 +439,7 @@ class SQLiteBackend(DatabaseBackend):
 
         return pa.schema(fields)
 
-    def _infer_arrow_type(self, values: List) -> pa.DataType:
+    def _infer_arrow_type(self, values: list) -> pa.DataType:
         """Infer Arrow type from a list of values."""
         if not values:
             return pa.string()
@@ -463,28 +461,26 @@ class SQLiteBackend(DatabaseBackend):
 
         if isinstance(sample_value, bool):
             return pa.bool_()
-        elif isinstance(sample_value, int):
+        if isinstance(sample_value, int):
             # Check if all values fit in different int types
             min_val = min(non_null_values)
             max_val = max(non_null_values)
 
-            if -128 <= min_val and max_val <= 127:
+            if min_val >= -128 and max_val <= 127:
                 return pa.int8()
-            elif -32768 <= min_val and max_val <= 32767:
+            if min_val >= -32768 and max_val <= 32767:
                 return pa.int16()
-            elif -2147483648 <= min_val and max_val <= 2147483647:
+            if min_val >= -2147483648 and max_val <= 2147483647:
                 return pa.int32()
-            else:
-                return pa.int64()
-        elif isinstance(sample_value, float):
+            return pa.int64()
+        if isinstance(sample_value, float):
             return pa.float64()
-        elif isinstance(sample_value, str):
+        if isinstance(sample_value, str):
             return pa.string()
-        elif isinstance(sample_value, bytes):
+        if isinstance(sample_value, bytes):
             return pa.binary()
-        else:
-            # Default to string for unknown types
-            return pa.string()
+        # Default to string for unknown types
+        return pa.string()
 
     def close(self) -> None:
         """Close the SQLite connection."""
