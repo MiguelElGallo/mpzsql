@@ -12,9 +12,9 @@ from typing import List, Optional, Tuple
 
 import pyarrow as pa
 
-from src.mpzsql.backends.base import DatabaseBackend
-from src.mpzsql.config import ServerConfig
-from src.mpzsql.logfire_config import get_sqlite_logger
+from mpzsql.backends.base import DatabaseBackend
+from mpzsql.config import ServerConfig
+from mpzsql.logfire_config import get_sqlite_logger
 
 logger = logging.getLogger(__name__)
 sqlite_logger = get_sqlite_logger()
