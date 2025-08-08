@@ -60,6 +60,64 @@ target-version = ['py311']
 line-length = 88
 target-version = "py311"
 
+[tool.ruff.lint]
+# Enable additional rule sets for code quality
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "D",   # pydocstyle
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "C90", # mccabe complexity
+    "PIE", # flake8-pie
+    "SIM", # flake8-simplify
+    "RET", # flake8-return
+    "ARG", # flake8-unused-arguments
+    "PTH", # flake8-use-pathlib
+    "ERA", # eradicate (commented-out code)
+    "PL",  # pylint
+    "TRY", # tryceratops
+    "FLY", # flynt (f-string conversion)
+    "PERF", # perflint
+]
+
+# Ignore specific rules that are too strict for this project
+ignore = [
+    "D100", # Missing docstring in public module
+    "D101", # Missing docstring in public class
+    "D102", # Missing docstring in public method
+    "D103", # Missing docstring in public function
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D107", # Missing docstring in __init__
+    "TRY003", # Avoid specifying long messages outside the exception class
+    "PLR0913", # Too many arguments to function call
+    "B008", # Do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.mccabe]
+# Set maximum complexity (default is 10, we'll be a bit more lenient)
+max-complexity = 15
+
+[tool.ruff.lint.pylint]
+max-args = 8  # Maximum number of arguments for function/method
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have more complex functions and missing docstrings
+"tests/*" = ["D", "C90", "PLR0913", "PLR0915"]
+# CLI modules can have more complex argument parsing
+"src/mpzsql/cli.py" = ["C90", "PLR0913"]
+
+[tool.ruff.format]
+# Use double quotes
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
@@ -68,6 +126,7 @@ ignore_missing_imports = true
 [dependency-groups]
 dev = [
     "hatchling>=1.27.0",
+    "pre-commit>=4.2.0",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.0.0",
 ]

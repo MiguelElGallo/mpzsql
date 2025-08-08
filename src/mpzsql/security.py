@@ -1,21 +1,17 @@
-"""
-Security and authentication module for MPZSQL.
+"""Security and authentication module for MPZSQL.
 
 This module provides TLS/mTLS support and authentication middleware
 for JWT and Basic authentication.
 """
 
 import base64
-import json
 import logging
 import ssl
 from pathlib import Path
-from typing import Optional, Tuple, List
 
 import jwt
 import pyarrow.flight as pf
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 try:
     from mpzsql.config import ServerConfig
@@ -80,14 +76,14 @@ class AuthMiddleware:
 
             logger.debug(f"Basic authentication successful for user: {username}")
 
-        except ValueError as e:
+        except ValueError:
             raise pf.FlightUnauthenticatedError("Invalid basic authentication format")
         except Exception as e:
             logger.error(f"Basic authentication error: {e}")
             raise pf.FlightUnauthenticatedError("Authentication failed")
 
     def generate_jwt_token(
-        self, username: Optional[str] = None, expiry_hours: int = 24
+        self, username: str | None = None, expiry_hours: int = 24
     ) -> str:
         """Generate a JWT token for a user."""
         import datetime
@@ -102,10 +98,10 @@ class AuthMiddleware:
 
 
 def setup_tls_context(
-    cert_file: Optional[str] = None,
-    key_file: Optional[str] = None,
-    ca_file: Optional[str] = None,
-) -> Optional[ssl.SSLContext]:
+    cert_file: str | None = None,
+    key_file: str | None = None,
+    ca_file: str | None = None,
+) -> ssl.SSLContext | None:
     """Set up TLS context for the server."""
     if not cert_file or not key_file:
         return None
@@ -185,8 +181,8 @@ class FlightAuthHandler(pf.ServerAuthHandler):
         ------
         pf.FlightUnauthenticatedError
             If the token is invalid or the username does not match.
-        """
 
+        """
         try:
             if isinstance(token, bytes):
                 token = token.decode()
@@ -265,17 +261,21 @@ class HeaderAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
             # Add padding if needed
             missing_padding = len(b64_creds) % 4
             if missing_padding:
-                b64_creds += '=' * (4 - missing_padding)
-            
+                b64_creds += "=" * (4 - missing_padding)
+
             creds = base64.b64decode(b64_creds).decode()
             user, pwd = creds.split(":", 1)
             logger.debug(f"HeaderAuthMiddleware: parsed user = {user}")
         except Exception as e:
-            logger.error(f"HeaderAuthMiddleware: Failed to parse basic auth header: {e}")
+            logger.error(
+                f"HeaderAuthMiddleware: Failed to parse basic auth header: {e}"
+            )
             logger.error(f"HeaderAuthMiddleware: header = {header}")
             raise pf.FlightUnauthenticatedError("Invalid basic auth header")
         if user == self.username and pwd == self.password:
-            logger.info(f"HeaderAuthMiddleware: Authentication successful for user: {user}")
+            logger.info(
+                f"HeaderAuthMiddleware: Authentication successful for user: {user}"
+            )
             return HeaderAuthServerMiddleware(user, self.secret_key)
         logger.warning(f"HeaderAuthMiddleware: Invalid credentials for user: {user}")
         raise pf.FlightUnauthenticatedError("Invalid credentials")
@@ -290,7 +290,7 @@ class BearerAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
     def start_call(self, info, headers):
         auth_vals = headers.get("authorization")
         if not auth_vals:
-            return None
+            return
         header = (
             auth_vals[0].decode() if isinstance(auth_vals[0], bytes) else auth_vals[0]
         )
@@ -300,21 +300,22 @@ class BearerAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
                 jwt.decode(token, self.secret_key, algorithms=["HS256"])
             except Exception:
                 raise pf.FlightUnauthenticatedError("Invalid bearer token")
-        return None
+        return
 
 
 def create_self_signed_cert(
     hostname: str = "localhost",
     cert_file: str = "server.crt",
     key_file: str = "server.key",
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Create a self-signed certificate for testing purposes."""
-    from cryptography import x509
-    from cryptography.x509.oid import NameOID
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
     import datetime
     import ipaddress
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
 
     # Generate private key
     private_key = rsa.generate_private_key(
@@ -374,101 +375,108 @@ def create_self_signed_cert(
 
 class TLSCertificateLoader:
     """TLS certificate loading utilities for FlightSQL server.
-    
+
     This class provides functionality to load TLS certificates and keys
     for secure connections, following the same pattern as the Examples server.
     """
-    
+
     @staticmethod
-    def load_tls_certificates(cert_path: str, key_path: str) -> List[pf.CertKeyPair]:
+    def load_tls_certificates(cert_path: str, key_path: str) -> list[pf.CertKeyPair]:
         """Load TLS certificate and key files.
-        
+
         Args:
             cert_path: Path to the TLS certificate file (PEM format)
             key_path: Path to the TLS private key file (PEM format)
-            
+
         Returns:
             List of CertKeyPair objects for PyArrow Flight server
-            
+
         Raises:
             FileNotFoundError: If certificate or key files don't exist
             ValueError: If files cannot be read or are invalid
+
         """
         cert_file = Path(cert_path)
         key_file = Path(key_path)
-        
+
         # Validate files exist
         if not cert_file.exists():
             raise FileNotFoundError(f"TLS certificate file not found: {cert_path}")
         if not key_file.exists():
             raise FileNotFoundError(f"TLS private key file not found: {key_path}")
-            
+
         try:
             # Read certificate file
-            with open(cert_file, 'r') as f:
+            with open(cert_file) as f:
                 cert_content = f.read()
-                
-            # Read key file  
-            with open(key_file, 'r') as f:
+
+            # Read key file
+            with open(key_file) as f:
                 key_content = f.read()
-                
+
             # Create CertKeyPair
             cert_key_pair = pf.CertKeyPair(cert_content.encode(), key_content.encode())
-            
+
             logger.info(f"Successfully loaded TLS certificate: {cert_path}")
             logger.info(f"Successfully loaded TLS private key: {key_path}")
-            
+
             return [cert_key_pair]
-            
+
         except Exception as e:
             raise ValueError(f"Failed to load TLS certificates: {e}")
-    
-    @staticmethod 
+
+    @staticmethod
     def load_mtls_ca_certificate(ca_cert_path: str) -> str:
         """Load mTLS CA certificate for client verification.
-        
+
         Args:
             ca_cert_path: Path to the CA certificate file (PEM format)
-            
+
         Returns:
             CA certificate content as string
-            
+
         Raises:
             FileNotFoundError: If CA certificate file doesn't exist
             ValueError: If file cannot be read
+
         """
         ca_file = Path(ca_cert_path)
-        
+
         if not ca_file.exists():
-            raise FileNotFoundError(f"mTLS CA certificate file not found: {ca_cert_path}")
-            
+            raise FileNotFoundError(
+                f"mTLS CA certificate file not found: {ca_cert_path}"
+            )
+
         try:
-            with open(ca_file, 'r') as f:
+            with open(ca_file) as f:
                 ca_content = f.read()
-                
+
             logger.info(f"Successfully loaded mTLS CA certificate: {ca_cert_path}")
             return ca_content
-            
+
         except Exception as e:
             raise ValueError(f"Failed to load mTLS CA certificate: {e}")
-    
+
     @staticmethod
-    def configure_tls_options(config: ServerConfig) -> Tuple[Optional[List[pf.CertKeyPair]], Optional[str], bool]:
+    def configure_tls_options(
+        config: ServerConfig,
+    ) -> tuple[list[pf.CertKeyPair] | None, str | None, bool]:
         """Configure TLS options based on server configuration.
-        
+
         Args:
             config: Server configuration object
-            
+
         Returns:
             Tuple of (tls_certificates, root_certificates, verify_client)
-            
+
         Raises:
             ValueError: If TLS configuration is invalid
+
         """
         tls_certificates = None
         root_certificates = None
         verify_client = False
-        
+
         # Load TLS certificates if configured
         if config.is_tls_enabled:
             tls_certificates = TLSCertificateLoader.load_tls_certificates(
@@ -477,14 +485,16 @@ class TLSCertificateLoader:
             logger.info("TLS encryption enabled")
         else:
             logger.warning("TLS disabled - connections are not encrypted")
-            
+
         # Load mTLS CA certificate if configured
         if config.is_mtls_enabled:
             if not config.is_tls_enabled:
                 raise ValueError("mTLS requires TLS to be enabled")
-                
-            root_certificates = TLSCertificateLoader.load_mtls_ca_certificate(config.mtls_ca)
+
+            root_certificates = TLSCertificateLoader.load_mtls_ca_certificate(
+                config.mtls_ca
+            )
             verify_client = True
             logger.info("mTLS client verification enabled")
-            
+
         return tls_certificates, root_certificates, verify_client

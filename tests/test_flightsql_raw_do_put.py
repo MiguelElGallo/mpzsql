@@ -384,7 +384,9 @@ class TestFlightSQLRawDoPut:
         context = Mock(spec=pf.ServerCallContext)
         arrow_table = self.create_sample_arrow_table()
 
-        for qualified_name, expected_name in zip(qualified_names, expected_names):
+        for qualified_name, expected_name in zip(
+            qualified_names, expected_names, strict=False
+        ):
             descriptor = pf.FlightDescriptor.for_path(qualified_name.encode("utf-8"))
             reader = Mock(spec=pf.FlightStreamReader)
             reader.read_all.return_value = arrow_table  # Mock the read_all method

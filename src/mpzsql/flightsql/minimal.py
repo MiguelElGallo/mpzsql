@@ -1,5 +1,4 @@
-"""
-Minimal working FlightSQL server implementation.
+"""Minimal working FlightSQL server implementation.
 
 This implements the absolute minimum needed to support JDBC clients
 by providing proper FlightSQL method implementations.
@@ -13,7 +12,8 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any, Dict, Iterator, List, Optional
+from collections.abc import Iterator
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.flight as pf  # keep original alias for pf.<...>
@@ -172,8 +172,7 @@ logger = logging.getLogger(__name__)
 
 
 class MinimalFlightSQLServer(pf.FlightServerBase):
-    """
-    Minimal FlightSQL server that inherits from FlightServerBase
+    """Minimal FlightSQL server that inherits from FlightServerBase
     and implements the required methods for JDBC compatibility.
     """
 
@@ -242,10 +241,10 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         self.advertised_location = advertised_location or location
         self.backend = backend
         self.config = config
-        self.prepared_statements: Dict[str, Dict[str, Any]] = {}
+        self.prepared_statements: dict[str, dict[str, Any]] = {}
         # Add transaction and session management like Examples implementation
-        self.open_transactions: Dict[str, str] = {}  # transaction_id -> connection_id
-        self.open_sessions: Dict[str, Any] = {}  # session_id -> connection
+        self.open_transactions: dict[str, str] = {}  # transaction_id -> connection_id
+        self.open_sessions: dict[str, Any] = {}  # session_id -> connection
         self._mutex = threading.Lock()  # Similar to Examples mutex
         self._transaction_counter = 0
 
@@ -471,7 +470,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                     logger.debug(f"Row count unavailable for {table_name}: {e}")
                     total_rows = 0
                 endpoint = pf.FlightEndpoint(
-                    ticket=pf.Ticket(f"PATH:{table_name}".encode("utf-8")),
+                    ticket=pf.Ticket(f"PATH:{table_name}".encode()),
                     locations=[self.advertised_location],
                 )
                 return pf.FlightInfo(
@@ -552,29 +551,29 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             print("SERVER: DEBUG - Handling COMMAND_STATEMENT_QUERY")
             command = self._parse_statement_query(any_command)
             return self._get_flight_info_statement(descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
             print("SERVER: DEBUG - Handling COMMAND_GET_CATALOGS")
             command = CommandGetCatalogs()
             return self._get_flight_info_catalogs(descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
             print("SERVER: DEBUG - Handling COMMAND_GET_DB_SCHEMAS")
             command = self._parse_get_db_schemas(any_command)
             return self._get_flight_info_schemas(descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
             print("SERVER: DEBUG - Handling COMMAND_GET_TABLES")
             command = self._parse_get_tables(any_command)
             return self._get_flight_info_tables(descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
             command = CommandGetTableTypes()
             return self._get_flight_info_table_types(descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_COLUMNS_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_COLUMNS_TYPE_URL:
             print("SERVER: DEBUG - Handling COMMAND_GET_COLUMNS")
             command = self._parse_get_columns(any_command)
             return self._get_flight_info_columns(descriptor, command)
-        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+        if command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
             command = self._parse_get_sql_info(any_command)
             return self._get_flight_info_sql_info(descriptor, command)
-        elif (
+        if (
             command_type_url
             == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
         ):
@@ -605,7 +604,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 # Return a safe fallback response instead of crashing
                 try:
                     schema = pa.schema([pa.field("error", pa.string())])
-                    safe_ticket = f"ERROR: {str(e)}".encode("utf-8")
+                    safe_ticket = f"ERROR: {str(e)}".encode()
                     # Use the advertised location for the endpoint
                     endpoint = pf.FlightEndpoint(
                         ticket=pf.Ticket(safe_ticket),
@@ -680,25 +679,25 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 actions_log.info(f"DEBUG do_get: StatementQuery - {query}")
                 actions_handler.flush()
                 return self._do_get_statement(command)
-            elif command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
                 command = CommandGetCatalogs()
                 return self._do_get_catalogs(command)
-            elif command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
                 command = self._parse_get_db_schemas(any_command)
                 return self._do_get_schemas(command)
-            elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
                 command = self._parse_get_tables(any_command)
                 return self._do_get_tables(command)
-            elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
                 command = CommandGetTableTypes()
                 return self._do_get_table_types(command)
-            elif command_type_url == FlightSQLProtobuf.COMMAND_GET_COLUMNS_TYPE_URL:
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_COLUMNS_TYPE_URL:
                 command = self._parse_get_columns(any_command)
                 return self._do_get_columns(command)
-            elif command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
                 command = self._parse_get_sql_info(any_command)
                 return self._do_get_sql_info(command)
-            elif (
+            if (
                 command_type_url
                 == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
             ):
@@ -1254,7 +1253,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         return self._do_get_statement_from_query(query)
 
     def _do_get_statement_from_query(
-        self, query: str, params: Optional[List] = None
+        self, query: str, params: list | None = None
     ) -> pf.FlightDataStream:
         logger.info(f"Executing query: {query}")
         print(f"SERVER: Executing query: {query}")
@@ -1295,10 +1294,9 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             return pf.RecordBatchStream(error_table)
 
     def _convert_parameter_batches_to_list(
-        self, parameter_batches: List[pa.RecordBatch]
-    ) -> List:
-        """
-        Convert PyArrow parameter batches to a simple Python list for DuckDB.
+        self, parameter_batches: list[pa.RecordBatch]
+    ) -> list:
+        """Convert PyArrow parameter batches to a simple Python list for DuckDB.
 
         The client sends parameters as PyArrow record batches, but DuckDB expects
         a simple Python list of values like [19] for a single parameter.
@@ -1439,9 +1437,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
         query = command.query
         return self._do_put_update_from_query(query)
 
-    def _do_put_update_from_query(
-        self, query: str, params: Optional[List] = None
-    ) -> int:
+    def _do_put_update_from_query(self, query: str, params: list | None = None) -> int:
         actions_log.info("1. Receiving command: SQL Update")
         actions_log.info(f"2. Command arguments: {query}")
         actions_log.info(f"3. Command sent to DuckDB: {query}")
@@ -1460,8 +1456,8 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             raise e
 
     def _extract_parameters_from_batches(
-        self, parameter_batches: List[pa.RecordBatch]
-    ) -> List:
+        self, parameter_batches: list[pa.RecordBatch]
+    ) -> list:
         """Extract parameter values from PyArrow record batches into a flat list."""
         params = []
         for batch in parameter_batches:

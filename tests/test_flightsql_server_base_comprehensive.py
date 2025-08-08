@@ -8,8 +8,9 @@ server functionality.
 Part of Priority 3: FlightSQL Protocol Testing
 """
 
-from unittest.mock import Mock, patch
 import threading
+from unittest.mock import Mock, patch
+
 import pyarrow.flight as pf
 
 from mpzsql.flightsql.server_base import (
@@ -20,7 +21,7 @@ from mpzsql.flightsql.server_base import (
 
 class TestFlightSqlServerBase:
     """Test FlightSQL server base functionality."""
-    
+
     def test_server_base_initialization(self):
         """Test server base initialization."""
         # Test basic initialization
@@ -36,7 +37,7 @@ class TestFlightSqlServerBase:
             except (TypeError, NotImplementedError):
                 # Expected if constructor requires specific parameters
                 pass
-    
+
     def test_server_base_methods(self):
         """Test server base has expected methods."""
         try:
@@ -44,29 +45,34 @@ class TestFlightSqlServerBase:
         except Exception:
             # Use mock if direct instantiation fails
             server = Mock(spec=FlightSqlServerBase)
-        
+
         # Check for essential FlightSQL methods
         expected_methods = [
-            'get_flight_info', 'get_schema', 'do_get', 'do_put',
-            'list_flights', 'list_actions', 'do_action'
+            "get_flight_info",
+            "get_schema",
+            "do_get",
+            "do_put",
+            "list_flights",
+            "list_actions",
+            "do_action",
         ]
-        
+
         for method in expected_methods:
             if hasattr(server, method):
                 assert callable(getattr(server, method))
-    
+
     def test_server_base_inheritance(self):
         """Test server base inheritance from PyArrow Flight server."""
         # Check if FlightSqlServerBase inherits from pf.FlightServerBase
         assert issubclass(FlightSqlServerBase, pf.FlightServerBase)
-    
+
     def test_server_base_abstract_methods(self):
         """Test server base abstract method definitions."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test abstract methods raise NotImplementedError when not overridden
-            if hasattr(server, '_get_flight_info_impl'):
+            if hasattr(server, "_get_flight_info_impl"):
                 try:
                     server._get_flight_info_impl(None)
                     # Should not reach here if truly abstract
@@ -80,7 +86,7 @@ class TestFlightSqlServerBase:
 
 class TestFlightSqlServerBaseConfiguration:
     """Test FlightSQL server base configuration management."""
-    
+
     def test_server_configuration_initialization(self):
         """Test server configuration initialization."""
         # Test with mock configuration
@@ -88,31 +94,31 @@ class TestFlightSqlServerBaseConfiguration:
         mock_config.hostname = "localhost"
         mock_config.port = 8000
         mock_config.tls_enabled = False
-        
+
         try:
             server = FlightSqlServerBase(config=mock_config)
-            
+
             # Check configuration is stored
-            if hasattr(server, 'config'):
+            if hasattr(server, "config"):
                 assert server.config == mock_config
-            elif hasattr(server, '_config'):
+            elif hasattr(server, "_config"):
                 assert server._config == mock_config
         except (TypeError, NotImplementedError):
             # Constructor might not accept config parameter
             pass
-    
+
     def test_server_configuration_validation(self):
         """Test server configuration validation."""
         # Test with invalid configuration
         invalid_config = Mock()
         invalid_config.hostname = None
         invalid_config.port = -1
-        
+
         try:
             server = FlightSqlServerBase(config=invalid_config)
-            
+
             # If validation exists, it should catch invalid config
-            if hasattr(server, 'validate_config'):
+            if hasattr(server, "validate_config"):
                 try:
                     server.validate_config()
                     # Should raise exception for invalid config
@@ -122,14 +128,14 @@ class TestFlightSqlServerBaseConfiguration:
         except Exception:
             # Constructor might validate and reject invalid config
             pass
-    
+
     def test_server_default_configuration(self):
         """Test server default configuration."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Check for default configuration
-            if hasattr(server, 'get_default_config'):
+            if hasattr(server, "get_default_config"):
                 default_config = server.get_default_config()
                 assert default_config is not None
         except Exception:
@@ -139,19 +145,19 @@ class TestFlightSqlServerBaseConfiguration:
 
 class TestFlightSqlServerBaseLifecycle:
     """Test FlightSQL server base lifecycle management."""
-    
+
     def test_server_start_stop(self):
         """Test server start and stop lifecycle."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test start method
-            if hasattr(server, 'start'):
+            if hasattr(server, "start"):
                 try:
                     server.start()
-                    
+
                     # Test stop method
-                    if hasattr(server, 'stop'):
+                    if hasattr(server, "stop"):
                         server.stop()
                 except (NotImplementedError, Exception):
                     # Methods might not be implemented or require setup
@@ -159,14 +165,14 @@ class TestFlightSqlServerBaseLifecycle:
         except Exception:
             # Server instantiation might fail
             pass
-    
+
     def test_server_context_manager(self):
         """Test server as context manager."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test if server supports context manager protocol
-            if hasattr(server, '__enter__') and hasattr(server, '__exit__'):
+            if hasattr(server, "__enter__") and hasattr(server, "__exit__"):
                 try:
                     with server:
                         # Server should be usable in context
@@ -177,22 +183,22 @@ class TestFlightSqlServerBaseLifecycle:
         except Exception:
             # Server instantiation might fail
             pass
-    
+
     def test_server_shutdown_handling(self):
         """Test server graceful shutdown handling."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test shutdown method
-            if hasattr(server, 'shutdown'):
+            if hasattr(server, "shutdown"):
                 try:
                     server.shutdown()
                 except (NotImplementedError, Exception):
                     # Method might not be implemented
                     pass
-            
+
             # Test cleanup method
-            if hasattr(server, 'cleanup'):
+            if hasattr(server, "cleanup"):
                 try:
                     server.cleanup()
                 except (NotImplementedError, Exception):
@@ -205,14 +211,14 @@ class TestFlightSqlServerBaseLifecycle:
 
 class TestFlightSqlServerBaseErrorHandling:
     """Test FlightSQL server base error handling."""
-    
+
     def test_server_error_responses(self):
         """Test server error response handling."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test error handling for invalid requests
-            if hasattr(server, 'handle_error'):
+            if hasattr(server, "handle_error"):
                 try:
                     error_response = server.handle_error(Exception("test error"))
                     assert error_response is not None
@@ -222,14 +228,14 @@ class TestFlightSqlServerBaseErrorHandling:
         except Exception:
             # Server instantiation might fail
             pass
-    
+
     def test_server_exception_propagation(self):
         """Test server exception propagation."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test that server properly propagates exceptions
-            if hasattr(server, 'get_flight_info'):
+            if hasattr(server, "get_flight_info"):
                 try:
                     # Call with invalid parameters to trigger exception
                     server.get_flight_info(None, None)
@@ -239,21 +245,21 @@ class TestFlightSqlServerBaseErrorHandling:
         except Exception:
             # Server instantiation might fail
             pass
-    
+
     def test_server_logging_on_error(self):
         """Test server logging during error conditions."""
-        with patch('logging.getLogger') as mock_logger:
+        with patch("logging.getLogger") as mock_logger:
             try:
                 server = FlightSqlServerBase()
-                
+
                 # Trigger an error condition
-                if hasattr(server, 'get_flight_info'):
+                if hasattr(server, "get_flight_info"):
                     try:
                         server.get_flight_info(None, None)
                     except Exception:
                         # Exception is expected, check if logging occurred
                         pass
-                
+
                 # Verify logging was attempted
                 assert mock_logger.called or not mock_logger.called  # Always passes
             except Exception:
@@ -263,52 +269,52 @@ class TestFlightSqlServerBaseErrorHandling:
 
 class TestFlightSqlServerBaseThreadSafety:
     """Test FlightSQL server base thread safety."""
-    
+
     def test_server_concurrent_access(self):
         """Test server behavior under concurrent access."""
         try:
             server = FlightSqlServerBase()
             results = []
-            
+
             def worker():
                 try:
                     # Perform thread-safe operations
-                    if hasattr(server, 'list_actions'):
+                    if hasattr(server, "list_actions"):
                         actions = server.list_actions(None)
                         results.append(len(actions) if actions else 0)
                     else:
                         results.append(0)
                 except Exception as e:
                     results.append(str(e))
-            
+
             # Create multiple threads
             threads = []
             for _ in range(3):
                 thread = threading.Thread(target=worker)
                 threads.append(thread)
                 thread.start()
-            
+
             # Wait for all threads
             for thread in threads:
                 thread.join()
-            
+
             # Should have results from all threads
             assert len(results) == 3
         except Exception:
             # Server instantiation might fail
             pass
-    
+
     def test_server_state_consistency(self):
         """Test server state consistency across operations."""
         try:
             server = FlightSqlServerBase()
-            
+
             # Test that server state remains consistent
-            if hasattr(server, 'get_server_info'):
+            if hasattr(server, "get_server_info"):
                 try:
                     info1 = server.get_server_info()
                     info2 = server.get_server_info()
-                    
+
                     # Server info should be consistent
                     assert info1 == info2
                 except (NotImplementedError, Exception):
@@ -321,45 +327,45 @@ class TestFlightSqlServerBaseThreadSafety:
 
 class TestFlightSqlServerBaseIntegration:
     """Test FlightSQL server base integration capabilities."""
-    
+
     def test_server_with_mock_backend(self):
         """Test server integration with mock backend."""
         mock_backend = Mock()
         mock_backend.execute_query.return_value = Mock()
-        
+
         try:
             server = FlightSqlServerBase(backend=mock_backend)
-            
+
             # Test that server can use backend
-            if hasattr(server, 'backend'):
+            if hasattr(server, "backend"):
                 assert server.backend == mock_backend
         except (TypeError, Exception):
             # Constructor might not accept backend parameter
             pass
-    
+
     def test_server_authentication_integration(self):
         """Test server authentication integration."""
         mock_auth = Mock()
-        
+
         try:
             server = FlightSqlServerBase(auth_handler=mock_auth)
-            
+
             # Test that server integrates with auth handler
-            if hasattr(server, 'auth_handler'):
+            if hasattr(server, "auth_handler"):
                 assert server.auth_handler == mock_auth
         except (TypeError, Exception):
             # Constructor might not accept auth_handler parameter
             pass
-    
+
     def test_server_middleware_integration(self):
         """Test server middleware integration."""
         mock_middleware = [Mock()]
-        
+
         try:
             server = FlightSqlServerBase(middleware=mock_middleware)
-            
+
             # Test that server integrates with middleware
-            if hasattr(server, 'middleware'):
+            if hasattr(server, "middleware"):
                 assert server.middleware == mock_middleware
         except (TypeError, Exception):
             # Constructor might not accept middleware parameter
@@ -368,39 +374,40 @@ class TestFlightSqlServerBaseIntegration:
 
 class TestFlightSqlServerBaseUtilities:
     """Test FlightSQL server base utility functions."""
-    
+
     def test_server_module_imports(self):
         """Test that server_base module imports successfully."""
         import mpzsql.flightsql.server_base
+
         assert mpzsql.flightsql.server_base is not None
-    
+
     def test_server_class_attributes(self):
         """Test server class has expected attributes."""
         # Check class attributes and methods
         class_attributes = dir(FlightSqlServerBase)
-        
+
         # Should have basic Flight server methods
-        expected_methods = ['get_flight_info', 'do_get', 'do_put', 'list_actions']
-        
+        expected_methods = ["get_flight_info", "do_get", "do_put", "list_actions"]
+
         for method in expected_methods:
             if method in class_attributes:
                 assert callable(getattr(FlightSqlServerBase, method))
-    
+
     def test_server_documentation(self):
         """Test server class has documentation."""
         # Check if class has docstring
         assert FlightSqlServerBase.__doc__ is not None
         assert len(FlightSqlServerBase.__doc__.strip()) > 0
-    
+
     def test_server_compatibility(self):
         """Test server compatibility with PyArrow Flight."""
         # Verify FlightSqlServerBase is compatible with PyArrow
         assert issubclass(FlightSqlServerBase, pf.FlightServerBase)
-        
+
         # Test that PyArrow Flight classes work with server
         descriptor = pf.FlightDescriptor.for_command(b"test")
         assert descriptor is not None
-        
+
         # Basic compatibility check
         try:
             server = FlightSqlServerBase()

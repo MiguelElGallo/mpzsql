@@ -3,29 +3,29 @@ Tests for security and TLS module.
 Tests for mpzsql.security module providing authentication middleware and TLS support.
 """
 
-import pytest
+import base64
+import os
 import ssl
 import tempfile
-import os
-from unittest.mock import Mock
-import jwt
-import base64
 from datetime import datetime, timedelta
+from unittest.mock import Mock
 
+import jwt
 import pyarrow.flight as pf
+import pytest
 
+from mpzsql.config import ServerConfig
 from mpzsql.security import (
     AuthMiddleware,
-    setup_tls_context,
-    FlightAuthHandler, 
-    NoOpAuthHandler,
+    BearerAuthServerMiddlewareFactory,
+    FlightAuthHandler,
     HeaderAuthServerMiddleware,
     HeaderAuthServerMiddlewareFactory,
-    BearerAuthServerMiddlewareFactory,
+    NoOpAuthHandler,
+    TLSCertificateLoader,
     create_self_signed_cert,
-    TLSCertificateLoader
+    setup_tls_context,
 )
-from mpzsql.config import ServerConfig
 
 
 class TestAuthMiddleware:
@@ -38,7 +38,7 @@ class TestAuthMiddleware:
         self.config.password = "testpass"
         self.config.secret_key = "test-secret-key"
         self.config.is_auth_enabled = True
-        
+
         self.auth_middleware = AuthMiddleware(self.config)
 
     def test_initialization(self):
@@ -52,102 +52,108 @@ class TestAuthMiddleware:
         """Test authenticate method when auth is disabled."""
         self.config.is_auth_enabled = False
         context = Mock(spec=pf.ServerCallContext)
-        
+
         # Should return without error when auth is disabled
         self.auth_middleware.authenticate(context)
 
     def test_authenticate_auth_enabled(self):
         """Test authenticate method when auth is enabled."""
         context = Mock(spec=pf.ServerCallContext)
-        
+
         # Should return without error (method is for backwards compatibility)
         self.auth_middleware.authenticate(context)
 
     def test_authenticate_jwt_valid_token(self):
         """Test JWT authentication with valid token."""
         payload = {
-            'username': 'testuser',
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "username": "testuser",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "test-secret-key", algorithm="HS256")
-        
+
         # Should not raise exception
         self.auth_middleware._authenticate_jwt(token)
 
     def test_authenticate_jwt_expired_token(self):
         """Test JWT authentication with expired token."""
         payload = {
-            'username': 'testuser',
-            'exp': datetime.utcnow() - timedelta(hours=1),
-            'iat': datetime.utcnow() - timedelta(hours=2)
+            "username": "testuser",
+            "exp": datetime.utcnow() - timedelta(hours=1),
+            "iat": datetime.utcnow() - timedelta(hours=2),
         }
         token = jwt.encode(payload, "test-secret-key", algorithm="HS256")
-        
+
         with pytest.raises(pf.FlightUnauthenticatedError, match="Token has expired"):
             self.auth_middleware._authenticate_jwt(token)
 
     def test_authenticate_jwt_invalid_signature(self):
         """Test JWT authentication with invalid signature."""
         payload = {
-            'username': 'testuser',
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "username": "testuser",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "wrong-secret", algorithm="HS256")
-        
+
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid token"):
             self.auth_middleware._authenticate_jwt(token)
 
     def test_authenticate_jwt_wrong_username(self):
         """Test JWT authentication with wrong username in token."""
         payload = {
-            'username': 'wronguser',
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "username": "wronguser",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "test-secret-key", algorithm="HS256")
-        
-        with pytest.raises(pf.FlightUnauthenticatedError, match="Authentication failed"):
+
+        with pytest.raises(
+            pf.FlightUnauthenticatedError, match="Authentication failed"
+        ):
             self.auth_middleware._authenticate_jwt(token)
 
     def test_authenticate_jwt_malformed_token(self):
         """Test JWT authentication with malformed token."""
         malformed_token = "not.a.valid.jwt.token"
-        
+
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid token"):
             self.auth_middleware._authenticate_jwt(malformed_token)
 
     def test_authenticate_jwt_no_username_in_token(self):
         """Test JWT authentication with token missing username."""
         payload = {
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "test-secret-key", algorithm="HS256")
-        
+
         # Should pass when no username in token
         self.auth_middleware._authenticate_jwt(token)
 
     def test_authenticate_basic_valid_credentials(self):
         """Test Basic authentication with valid credentials."""
         credentials = base64.b64encode(b"testuser:testpass").decode("utf-8")
-        
+
         # Should not raise exception
         self.auth_middleware._authenticate_basic(credentials)
 
     def test_authenticate_basic_invalid_username(self):
         """Test Basic authentication with invalid username."""
         credentials = base64.b64encode(b"wronguser:testpass").decode("utf-8")
-        
-        with pytest.raises(pf.FlightUnauthenticatedError, match="Authentication failed"):
+
+        with pytest.raises(
+            pf.FlightUnauthenticatedError, match="Authentication failed"
+        ):
             self.auth_middleware._authenticate_basic(credentials)
 
     def test_authenticate_basic_invalid_password(self):
         """Test Basic authentication with invalid password."""
         credentials = base64.b64encode(b"testuser:wrongpass").decode("utf-8")
-        
-        with pytest.raises(pf.FlightUnauthenticatedError, match="Authentication failed"):
+
+        with pytest.raises(
+            pf.FlightUnauthenticatedError, match="Authentication failed"
+        ):
             self.auth_middleware._authenticate_basic(credentials)
 
     def test_authenticate_basic_malformed_credentials(self):
@@ -156,9 +162,9 @@ class TestAuthMiddleware:
         malformed_credentials = [
             "not-base64-encoded",
             base64.b64encode(b"missing-colon").decode("utf-8"),
-            "invalid-base64-chars!@#"
+            "invalid-base64-chars!@#",
         ]
-        
+
         for credentials in malformed_credentials:
             with pytest.raises(pf.FlightUnauthenticatedError):
                 self.auth_middleware._authenticate_basic(credentials)
@@ -166,30 +172,32 @@ class TestAuthMiddleware:
     def test_generate_jwt_token_default_user(self):
         """Test JWT token generation with default user."""
         token = self.auth_middleware.generate_jwt_token()
-        
+
         payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-        assert payload['username'] == "testuser"
-        assert 'iat' in payload
-        assert 'exp' in payload
+        assert payload["username"] == "testuser"
+        assert "iat" in payload
+        assert "exp" in payload
 
     def test_generate_jwt_token_custom_user(self):
         """Test JWT token generation with custom user."""
         token = self.auth_middleware.generate_jwt_token(username="customuser")
-        
+
         payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-        assert payload['username'] == "customuser"
+        assert payload["username"] == "customuser"
 
     def test_generate_jwt_token_custom_expiry(self):
         """Test JWT token generation with custom expiry."""
         token = self.auth_middleware.generate_jwt_token(expiry_hours=48)
-        
+
         payload = jwt.decode(token, "test-secret-key", algorithms=["HS256"])
-        exp_time = datetime.fromtimestamp(payload['exp'])
-        iat_time = datetime.fromtimestamp(payload['iat'])
-        
+        exp_time = datetime.fromtimestamp(payload["exp"])
+        iat_time = datetime.fromtimestamp(payload["iat"])
+
         # Verify token expires in approximately 48 hours
         time_diff = exp_time - iat_time
-        assert abs(time_diff.total_seconds() - (48 * 3600)) < 60  # Within 1 minute tolerance
+        assert (
+            abs(time_diff.total_seconds() - (48 * 3600)) < 60
+        )  # Within 1 minute tolerance
 
 
 class TestSetupTLSContext:
@@ -199,10 +207,10 @@ class TestSetupTLSContext:
         """Test TLS context setup with no certificate or key."""
         context = setup_tls_context()
         assert context is None
-        
+
         context = setup_tls_context(cert_file=None, key_file=None)
         assert context is None
-        
+
         context = setup_tls_context(cert_file="cert.pem", key_file=None)
         assert context is None
 
@@ -211,12 +219,12 @@ class TestSetupTLSContext:
         with tempfile.TemporaryDirectory() as temp_dir:
             cert_file = os.path.join(temp_dir, "server.crt")
             key_file = os.path.join(temp_dir, "server.key")
-            
+
             # Create self-signed certificate for testing
             create_self_signed_cert(cert_file=cert_file, key_file=key_file)
-            
+
             context = setup_tls_context(cert_file=cert_file, key_file=key_file)
-            
+
             assert context is not None
             assert isinstance(context, ssl.SSLContext)
             assert context.verify_mode == ssl.CERT_NONE
@@ -228,16 +236,18 @@ class TestSetupTLSContext:
             cert_file = os.path.join(temp_dir, "server.crt")
             key_file = os.path.join(temp_dir, "server.key")
             ca_file = os.path.join(temp_dir, "ca.crt")
-            
+
             # Create self-signed certificate for testing
             create_self_signed_cert(cert_file=cert_file, key_file=key_file)
-            
+
             # Copy cert to ca file for testing
-            with open(cert_file, 'r') as src, open(ca_file, 'w') as dst:
+            with open(cert_file) as src, open(ca_file, "w") as dst:
                 dst.write(src.read())
-            
-            context = setup_tls_context(cert_file=cert_file, key_file=key_file, ca_file=ca_file)
-            
+
+            context = setup_tls_context(
+                cert_file=cert_file, key_file=key_file, ca_file=ca_file
+            )
+
             assert context is not None
             assert isinstance(context, ssl.SSLContext)
             assert context.verify_mode == ssl.CERT_REQUIRED
@@ -252,11 +262,13 @@ class TestSetupTLSContext:
         with tempfile.TemporaryDirectory() as temp_dir:
             cert_file = os.path.join(temp_dir, "server.crt")
             key_file = os.path.join(temp_dir, "server.key")
-            
+
             create_self_signed_cert(cert_file=cert_file, key_file=key_file)
-            
+
             with pytest.raises(Exception):
-                setup_tls_context(cert_file=cert_file, key_file=key_file, ca_file="nonexistent-ca.crt")
+                setup_tls_context(
+                    cert_file=cert_file, key_file=key_file, ca_file="nonexistent-ca.crt"
+                )
 
 
 class TestFlightAuthHandler:
@@ -268,7 +280,7 @@ class TestFlightAuthHandler:
         self.config.username = "testuser"
         self.config.password = "testpass"
         self.config.secret_key = "test-secret"
-        
+
         self.auth_middleware = AuthMiddleware(self.config)
         self.auth_handler = FlightAuthHandler(self.auth_middleware)
 
@@ -280,30 +292,30 @@ class TestFlightAuthHandler:
         """Test authentication with valid credentials."""
         outgoing = Mock()
         incoming = Mock()
-        
+
         # Mock BasicAuth serialization
         auth = pf.BasicAuth("testuser", "testpass")
         incoming.read.return_value = auth.serialize()
-        
+
         self.auth_handler.authenticate(outgoing, incoming)
-        
+
         # Verify token was written
         outgoing.write.assert_called_once()
         written_token = outgoing.write.call_args[0][0].decode()
-        
+
         # Verify token is valid
         payload = jwt.decode(written_token, "test-secret", algorithms=["HS256"])
-        assert payload['username'] == "testuser"
+        assert payload["username"] == "testuser"
 
     def test_authenticate_invalid_credentials(self):
         """Test authentication with invalid credentials."""
         outgoing = Mock()
         incoming = Mock()
-        
+
         # Mock BasicAuth with wrong credentials
         auth = pf.BasicAuth("testuser", "wrongpass")
         incoming.read.return_value = auth.serialize()
-        
+
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid credentials"):
             self.auth_handler.authenticate(outgoing, incoming)
 
@@ -312,14 +324,16 @@ class TestFlightAuthHandler:
         outgoing = Mock()
         incoming = Mock()
         incoming.read.return_value = b"invalid-auth-data"
-        
-        with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid authentication data"):
+
+        with pytest.raises(
+            pf.FlightUnauthenticatedError, match="Invalid authentication data"
+        ):
             self.auth_handler.authenticate(outgoing, incoming)
 
     def test_is_valid_token_success(self):
         """Test is_valid with valid token."""
         token = self.auth_middleware.generate_jwt_token("testuser")
-        
+
         username = self.auth_handler.is_valid(token)
         assert username == "testuser"
 
@@ -327,7 +341,7 @@ class TestFlightAuthHandler:
         """Test is_valid with Bearer prefix."""
         token = self.auth_middleware.generate_jwt_token("testuser")
         bearer_token = f"Bearer {token}"
-        
+
         username = self.auth_handler.is_valid(bearer_token)
         assert username == "testuser"
 
@@ -335,7 +349,7 @@ class TestFlightAuthHandler:
         """Test is_valid with token as bytes."""
         token = self.auth_middleware.generate_jwt_token("testuser")
         token_bytes = token.encode()
-        
+
         username = self.auth_handler.is_valid(token_bytes)
         assert username == "testuser"
 
@@ -348,12 +362,12 @@ class TestFlightAuthHandler:
         """Test is_valid with token for wrong user."""
         # Create token with different username
         payload = {
-            'username': 'wronguser',
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "username": "wronguser",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "test-secret", algorithm="HS256")
-        
+
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid token"):
             self.auth_handler.is_valid(token)
 
@@ -369,10 +383,10 @@ class TestNoOpAuthHandler:
         """Test that authenticate does nothing."""
         outgoing = Mock()
         incoming = Mock()
-        
+
         # Should not raise any errors or call any methods
         self.handler.authenticate(outgoing, incoming)
-        
+
         outgoing.write.assert_not_called()
         incoming.read.assert_not_called()
 
@@ -397,15 +411,15 @@ class TestHeaderAuthServerMiddleware:
     def test_sending_headers(self):
         """Test sending_headers method."""
         headers = self.middleware.sending_headers()
-        
+
         assert "authorization" in headers
         auth_header = headers["authorization"]
         assert auth_header.startswith("Bearer ")
-        
+
         # Verify token is valid
         token = auth_header[7:]  # Remove "Bearer " prefix
         payload = jwt.decode(token, "test-secret", algorithms=["HS256"])
-        assert payload['username'] == "testuser"
+        assert payload["username"] == "testuser"
 
     def test_call_completed_does_nothing(self):
         """Test call_completed method does nothing."""
@@ -419,9 +433,7 @@ class TestHeaderAuthServerMiddlewareFactory:
     def setup_method(self):
         """Set up test environment."""
         self.factory = HeaderAuthServerMiddlewareFactory(
-            username="testuser",
-            password="testpass", 
-            secret_key="test-secret"
+            username="testuser", password="testpass", secret_key="test-secret"
         )
 
     def test_initialization(self):
@@ -435,10 +447,10 @@ class TestHeaderAuthServerMiddlewareFactory:
         # Create valid Basic auth header
         credentials = base64.b64encode(b"testuser:testpass").decode()
         headers = {"authorization": [f"Basic {credentials}"]}
-        
+
         info = Mock()
         middleware = self.factory.start_call(info, headers)
-        
+
         assert middleware is not None
         assert isinstance(middleware, HeaderAuthServerMiddleware)
 
@@ -446,7 +458,7 @@ class TestHeaderAuthServerMiddlewareFactory:
         """Test start_call with no authorization header."""
         headers = {}
         info = Mock()
-        
+
         middleware = self.factory.start_call(info, headers)
         assert middleware is None
 
@@ -454,7 +466,7 @@ class TestHeaderAuthServerMiddlewareFactory:
         """Test start_call with non-Basic authorization header."""
         headers = {"authorization": ["Bearer some-token"]}
         info = Mock()
-        
+
         middleware = self.factory.start_call(info, headers)
         assert middleware is None
 
@@ -462,7 +474,7 @@ class TestHeaderAuthServerMiddlewareFactory:
         """Test start_call with invalid credentials."""
         credentials = base64.b64encode(b"testuser:wrongpass").decode()
         headers = {"authorization": [f"Basic {credentials}"]}
-        
+
         info = Mock()
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid credentials"):
             self.factory.start_call(info, headers)
@@ -471,27 +483,31 @@ class TestHeaderAuthServerMiddlewareFactory:
         """Test start_call with malformed Basic auth header."""
         headers = {"authorization": ["Basic invalid-base64"]}
         info = Mock()
-        
-        with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid basic auth header"):
+
+        with pytest.raises(
+            pf.FlightUnauthenticatedError, match="Invalid basic auth header"
+        ):
             self.factory.start_call(info, headers)
 
     def test_start_call_missing_colon_in_credentials(self):
         """Test start_call with missing colon in credentials."""
         credentials = base64.b64encode(b"userpass").decode()  # Missing colon
         headers = {"authorization": [f"Basic {credentials}"]}
-        
+
         info = Mock()
-        with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid basic auth header"):
+        with pytest.raises(
+            pf.FlightUnauthenticatedError, match="Invalid basic auth header"
+        ):
             self.factory.start_call(info, headers)
 
     def test_start_call_bytes_auth_header(self):
         """Test start_call with auth header as bytes."""
         credentials = base64.b64encode(b"testuser:testpass").decode()
         headers = {"authorization": [f"Basic {credentials}".encode()]}
-        
+
         info = Mock()
         middleware = self.factory.start_call(info, headers)
-        
+
         assert middleware is not None
         assert isinstance(middleware, HeaderAuthServerMiddleware)
 
@@ -500,16 +516,16 @@ class TestHeaderAuthServerMiddlewareFactory:
         # Create credentials that will need padding
         raw_creds = "testuser:testpass"
         b64_creds = base64.b64encode(raw_creds.encode()).decode()
-        
+
         # Remove some padding to test auto-padding logic
-        if b64_creds.endswith('=='):
+        if b64_creds.endswith("=="):
             b64_creds = b64_creds[:-2]
-        elif b64_creds.endswith('='):
+        elif b64_creds.endswith("="):
             b64_creds = b64_creds[:-1]
-        
+
         headers = {"authorization": [f"Basic {b64_creds}"]}
         info = Mock()
-        
+
         middleware = self.factory.start_call(info, headers)
         assert middleware is not None
 
@@ -529,16 +545,16 @@ class TestBearerAuthServerMiddlewareFactory:
         """Test start_call with valid Bearer token."""
         # Create valid JWT token
         payload = {
-            'username': 'testuser',
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "username": "testuser",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "test-secret", algorithm="HS256")
         headers = {"authorization": [f"Bearer {token}"]}
-        
+
         info = Mock()
         middleware = self.factory.start_call(info, headers)
-        
+
         # Should return None (no middleware needed for valid tokens)
         assert middleware is None
 
@@ -546,7 +562,7 @@ class TestBearerAuthServerMiddlewareFactory:
         """Test start_call with no authorization header."""
         headers = {}
         info = Mock()
-        
+
         middleware = self.factory.start_call(info, headers)
         assert middleware is None
 
@@ -554,7 +570,7 @@ class TestBearerAuthServerMiddlewareFactory:
         """Test start_call with non-Bearer authorization header."""
         credentials = base64.b64encode(b"user:pass").decode()
         headers = {"authorization": [f"Basic {credentials}"]}
-        
+
         info = Mock()
         middleware = self.factory.start_call(info, headers)
         assert middleware is None
@@ -563,20 +579,20 @@ class TestBearerAuthServerMiddlewareFactory:
         """Test start_call with invalid Bearer token."""
         headers = {"authorization": ["Bearer invalid-token"]}
         info = Mock()
-        
+
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid bearer token"):
             self.factory.start_call(info, headers)
 
     def test_start_call_expired_bearer_token(self):
         """Test start_call with expired Bearer token."""
         payload = {
-            'username': 'testuser',
-            'exp': datetime.utcnow() - timedelta(hours=1),  # Expired
-            'iat': datetime.utcnow() - timedelta(hours=2)
+            "username": "testuser",
+            "exp": datetime.utcnow() - timedelta(hours=1),  # Expired
+            "iat": datetime.utcnow() - timedelta(hours=2),
         }
         token = jwt.encode(payload, "test-secret", algorithm="HS256")
         headers = {"authorization": [f"Bearer {token}"]}
-        
+
         info = Mock()
         with pytest.raises(pf.FlightUnauthenticatedError, match="Invalid bearer token"):
             self.factory.start_call(info, headers)
@@ -584,13 +600,13 @@ class TestBearerAuthServerMiddlewareFactory:
     def test_start_call_bytes_auth_header(self):
         """Test start_call with auth header as bytes."""
         payload = {
-            'username': 'testuser',
-            'exp': datetime.utcnow() + timedelta(hours=1),
-            'iat': datetime.utcnow()
+            "username": "testuser",
+            "exp": datetime.utcnow() + timedelta(hours=1),
+            "iat": datetime.utcnow(),
         }
         token = jwt.encode(payload, "test-secret", algorithm="HS256")
         headers = {"authorization": [f"Bearer {token}".encode()]}
-        
+
         info = Mock()
         middleware = self.factory.start_call(info, headers)
         assert middleware is None
@@ -604,25 +620,24 @@ class TestCreateSelfSignedCert:
         with tempfile.TemporaryDirectory() as temp_dir:
             cert_file = os.path.join(temp_dir, "test.crt")
             key_file = os.path.join(temp_dir, "test.key")
-            
+
             result_cert, result_key = create_self_signed_cert(
-                cert_file=cert_file,
-                key_file=key_file
+                cert_file=cert_file, key_file=key_file
             )
-            
+
             assert result_cert == cert_file
             assert result_key == key_file
             assert os.path.exists(cert_file)
             assert os.path.exists(key_file)
-            
+
             # Verify certificate content
-            with open(cert_file, 'r') as f:
+            with open(cert_file) as f:
                 cert_content = f.read()
                 assert "-----BEGIN CERTIFICATE-----" in cert_content
                 assert "-----END CERTIFICATE-----" in cert_content
-            
+
             # Verify key content
-            with open(key_file, 'r') as f:
+            with open(key_file) as f:
                 key_content = f.read()
                 assert "-----BEGIN PRIVATE KEY-----" in key_content
                 assert "-----END PRIVATE KEY-----" in key_content
@@ -632,13 +647,11 @@ class TestCreateSelfSignedCert:
         with tempfile.TemporaryDirectory() as temp_dir:
             cert_file = os.path.join(temp_dir, "custom.crt")
             key_file = os.path.join(temp_dir, "custom.key")
-            
+
             create_self_signed_cert(
-                hostname="example.com",
-                cert_file=cert_file,
-                key_file=key_file
+                hostname="example.com", cert_file=cert_file, key_file=key_file
             )
-            
+
             assert os.path.exists(cert_file)
             assert os.path.exists(key_file)
 
@@ -649,22 +662,23 @@ class TestTLSCertificateLoader:
     def setup_method(self):
         """Set up test environment."""
         self.temp_dir = tempfile.mkdtemp()
-        
+
     def teardown_method(self):
         """Clean up test environment."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_load_tls_certificates_success(self):
         """Test successful TLS certificate loading."""
         cert_file = os.path.join(self.temp_dir, "server.crt")
         key_file = os.path.join(self.temp_dir, "server.key")
-        
+
         # Create test certificate and key
         create_self_signed_cert(cert_file=cert_file, key_file=key_file)
-        
+
         cert_pairs = TLSCertificateLoader.load_tls_certificates(cert_file, key_file)
-        
+
         assert len(cert_pairs) == 1
         assert isinstance(cert_pairs[0], pf.CertKeyPair)
 
@@ -672,11 +686,11 @@ class TestTLSCertificateLoader:
         """Test TLS certificate loading with missing certificate."""
         cert_file = "/nonexistent/cert.pem"
         key_file = os.path.join(self.temp_dir, "key.pem")
-        
+
         # Create only key file
-        with open(key_file, 'w') as f:
+        with open(key_file, "w") as f:
             f.write("dummy key content")
-        
+
         with pytest.raises(FileNotFoundError, match="TLS certificate file not found"):
             TLSCertificateLoader.load_tls_certificates(cert_file, key_file)
 
@@ -684,23 +698,25 @@ class TestTLSCertificateLoader:
         """Test TLS certificate loading with missing key."""
         cert_file = os.path.join(self.temp_dir, "cert.pem")
         key_file = "/nonexistent/key.pem"
-        
+
         # Create only cert file
-        with open(cert_file, 'w') as f:
+        with open(cert_file, "w") as f:
             f.write("dummy cert content")
-        
+
         with pytest.raises(FileNotFoundError, match="TLS private key file not found"):
             TLSCertificateLoader.load_tls_certificates(cert_file, key_file)
 
     def test_load_mtls_ca_certificate_success(self):
         """Test successful mTLS CA certificate loading."""
         ca_file = os.path.join(self.temp_dir, "ca.crt")
-        
+
         # Create test CA certificate (use self-signed cert for testing)
-        create_self_signed_cert(cert_file=ca_file, key_file=os.path.join(self.temp_dir, "ca.key"))
-        
+        create_self_signed_cert(
+            cert_file=ca_file, key_file=os.path.join(self.temp_dir, "ca.key")
+        )
+
         ca_content = TLSCertificateLoader.load_mtls_ca_certificate(ca_file)
-        
+
         assert isinstance(ca_content, str)
         assert "-----BEGIN CERTIFICATE-----" in ca_content
         assert "-----END CERTIFICATE-----" in ca_content
@@ -708,25 +724,29 @@ class TestTLSCertificateLoader:
     def test_load_mtls_ca_certificate_not_found(self):
         """Test mTLS CA certificate loading with missing file."""
         ca_file = "/nonexistent/ca.crt"
-        
-        with pytest.raises(FileNotFoundError, match="mTLS CA certificate file not found"):
+
+        with pytest.raises(
+            FileNotFoundError, match="mTLS CA certificate file not found"
+        ):
             TLSCertificateLoader.load_mtls_ca_certificate(ca_file)
 
     def test_configure_tls_options_tls_enabled(self):
         """Test TLS options configuration with TLS enabled."""
         cert_file = os.path.join(self.temp_dir, "server.crt")
         key_file = os.path.join(self.temp_dir, "server.key")
-        
+
         create_self_signed_cert(cert_file=cert_file, key_file=key_file)
-        
+
         config = Mock(spec=ServerConfig)
         config.is_tls_enabled = True
         config.is_mtls_enabled = False
         config.tls_cert = cert_file
         config.tls_key = key_file
-        
-        tls_certs, root_certs, verify_client = TLSCertificateLoader.configure_tls_options(config)
-        
+
+        tls_certs, root_certs, verify_client = (
+            TLSCertificateLoader.configure_tls_options(config)
+        )
+
         assert tls_certs is not None
         assert len(tls_certs) == 1
         assert root_certs is None
@@ -737,19 +757,23 @@ class TestTLSCertificateLoader:
         cert_file = os.path.join(self.temp_dir, "server.crt")
         key_file = os.path.join(self.temp_dir, "server.key")
         ca_file = os.path.join(self.temp_dir, "ca.crt")
-        
+
         create_self_signed_cert(cert_file=cert_file, key_file=key_file)
-        create_self_signed_cert(cert_file=ca_file, key_file=os.path.join(self.temp_dir, "ca.key"))
-        
+        create_self_signed_cert(
+            cert_file=ca_file, key_file=os.path.join(self.temp_dir, "ca.key")
+        )
+
         config = Mock(spec=ServerConfig)
         config.is_tls_enabled = True
         config.is_mtls_enabled = True
         config.tls_cert = cert_file
         config.tls_key = key_file
         config.mtls_ca = ca_file
-        
-        tls_certs, root_certs, verify_client = TLSCertificateLoader.configure_tls_options(config)
-        
+
+        tls_certs, root_certs, verify_client = (
+            TLSCertificateLoader.configure_tls_options(config)
+        )
+
         assert tls_certs is not None
         assert len(tls_certs) == 1
         assert root_certs is not None
@@ -760,9 +784,11 @@ class TestTLSCertificateLoader:
         config = Mock(spec=ServerConfig)
         config.is_tls_enabled = False
         config.is_mtls_enabled = False
-        
-        tls_certs, root_certs, verify_client = TLSCertificateLoader.configure_tls_options(config)
-        
+
+        tls_certs, root_certs, verify_client = (
+            TLSCertificateLoader.configure_tls_options(config)
+        )
+
         assert tls_certs is None
         assert root_certs is None
         assert verify_client is False
@@ -772,6 +798,6 @@ class TestTLSCertificateLoader:
         config = Mock(spec=ServerConfig)
         config.is_tls_enabled = False
         config.is_mtls_enabled = True
-        
+
         with pytest.raises(ValueError, match="mTLS requires TLS to be enabled"):
             TLSCertificateLoader.configure_tls_options(config)

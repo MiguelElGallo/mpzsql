@@ -94,7 +94,7 @@ check_certbot() {
         echo "  CentOS/RHEL: sudo yum install certbot"
         exit 1
     fi
-    
+
     print_success "certbot is installed: $(certbot --version)"
 }
 
@@ -178,19 +178,19 @@ EOF
 # Function to build certbot command
 build_certbot_command() {
     local cmd="certbot certonly"
-    
+
     # User-writable directories (no root required)
     local config_dir="$HOME/.config/letsencrypt"
     local work_dir="$HOME/.local/share/letsencrypt"
     local logs_dir="$HOME/.local/share/letsencrypt/logs"
-    
+
     # Create directories if they don't exist
     mkdir -p "$config_dir" "$work_dir" "$logs_dir"
-    
+
     cmd="$cmd --config-dir $config_dir"
     cmd="$cmd --work-dir $work_dir"
     cmd="$cmd --logs-dir $logs_dir"
-    
+
     # Basic options
     # Note: Don't use --non-interactive for manual DNS challenges
     # as it prevents the auth hook from displaying the TXT record value
@@ -200,17 +200,17 @@ build_certbot_command() {
     cmd="$cmd --agree-tos"
     cmd="$cmd --email $EMAIL"
     cmd="$cmd --domains $DOMAIN"
-    
+
     # Certificate name
     if [ -n "$CERT_NAME" ]; then
         cmd="$cmd --cert-name $CERT_NAME"
     else
         cmd="$cmd --cert-name $DOMAIN"
     fi
-    
+
     # DNS challenge type
     cmd="$cmd --preferred-challenges dns"
-    
+
     # DNS provider specific options
     case "$DNS_PROVIDER" in
         "manual")
@@ -239,17 +239,17 @@ build_certbot_command() {
             fi
             ;;
     esac
-    
+
     # Staging server
     if [ "$STAGING" = true ]; then
         cmd="$cmd --staging"
     fi
-    
+
     # Dry run
     if [ "$DRY_RUN" = true ]; then
         cmd="$cmd --dry-run"
     fi
-    
+
     echo "$cmd"
 }
 
@@ -258,34 +258,34 @@ copy_certificates() {
     local cert_name="$1"
     local config_dir="$HOME/.config/letsencrypt"
     local live_dir="$config_dir/live/$cert_name"
-    
+
     if [ ! -d "$live_dir" ]; then
         print_error "Certificate directory not found: $live_dir"
         print_error "Available certificates:"
         ls -la "$config_dir/live/" 2>/dev/null || echo "No certificates found"
         return 1
     fi
-    
+
     print_status "Copying certificates to $CERT_DIR..."
-    
+
     # Copy the certificates
     if [ -f "$live_dir/fullchain.pem" ]; then
         cp "$live_dir/fullchain.pem" "$FULLCHAIN_FILE"
         cp "$live_dir/cert.pem" "$CERT_FILE"
         print_success "Certificate copied to $CERT_FILE"
     fi
-    
+
     if [ -f "$live_dir/chain.pem" ]; then
         cp "$live_dir/chain.pem" "$CHAIN_FILE"
         print_success "Chain copied to $CHAIN_FILE"
     fi
-    
+
     if [ -f "$live_dir/privkey.pem" ]; then
         cp "$live_dir/privkey.pem" "$KEY_FILE"
         chmod 600 "$KEY_FILE"
         print_success "Private key copied to $KEY_FILE"
     fi
-    
+
     # Set appropriate permissions
     chmod 644 "$CERT_FILE" 2>/dev/null || true
     chmod 644 "$FULLCHAIN_FILE" 2>/dev/null || true
@@ -296,18 +296,18 @@ copy_certificates() {
 show_certificate_info() {
     local cert_name="$1"
     local config_dir="$HOME/.config/letsencrypt"
-    
+
     print_success "Certificate generated successfully!"
     echo ""
     print_status "Certificate information:"
     certbot certificates --cert-name "$cert_name" --config-dir "$config_dir" 2>/dev/null || true
     echo ""
-    
+
     if [ -f "$CERT_FILE" ]; then
         print_status "Certificate details:"
         openssl x509 -in "$CERT_FILE" -text -noout | grep -A 3 "Subject:\|DNS:\|Not Before\|Not After" || true
     fi
-    
+
     echo ""
     print_status "Files created:"
     echo "   Certificate: $CERT_FILE"
@@ -315,11 +315,11 @@ show_certificate_info() {
     echo "   Full Chain: $FULLCHAIN_FILE"
     echo "   Chain Only: $CHAIN_FILE"
     echo ""
-    
+
     print_status "Usage with MPZSQL server:"
     echo "   uv run mpzsql-server --tls-cert $FULLCHAIN_FILE --tls-key $KEY_FILE --username admin --password secret"
     echo ""
-    
+
     print_status "Usage with client:"
     echo "   python3 src/demo_client/client.py connect --cert $FULLCHAIN_FILE --user admin --password secret --host $DOMAIN --port 8080"
 }
@@ -328,7 +328,7 @@ show_certificate_info() {
 show_renewal_info() {
     local cert_name="$1"
     local config_dir="$HOME/.config/letsencrypt"
-    
+
     echo ""
     print_status "Certificate Renewal:"
     echo "Let's Encrypt certificates are valid for 90 days. To renew:"
@@ -442,10 +442,10 @@ if eval "$CERTBOT_CMD"; then
     if [ "$DRY_RUN" = false ]; then
         # Copy certificates to our directory
         copy_certificates "$CERT_NAME"
-        
+
         # Show certificate information
         show_certificate_info "$CERT_NAME"
-        
+
         # Show renewal information
         show_renewal_info "$CERT_NAME"
     else
