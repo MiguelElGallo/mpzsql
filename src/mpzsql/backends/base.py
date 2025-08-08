@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple
 
 import pyarrow as pa
 
-from src.mpzsql.config import ServerConfig
+from mpzsql.config import ServerConfig
 
 
 class DatabaseBackend(ABC):
