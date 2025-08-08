@@ -218,7 +218,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                 )
             except Exception as e:
                 logger.error(f"TLS configuration failed: {e}")
-                raise ValueError(f"TLS configuration failed: {e}")
+                raise ValueError(f"TLS configuration failed: {e}") from e
 
         # Pass auth_handler, middleware, and TLS options to parent constructor
         # PyArrow Flight server expects TLS to be configured via specific parameters
@@ -621,7 +621,7 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                     print(
                         f"SERVER: CRITICAL ERROR - Even fallback failed: {fallback_error}"
                     )
-                    raise e  # Re-raise the original exception
+                    raise e from None  # Re-raise the original exception
         else:
             raise NotImplementedError(f"Unsupported command type: {command_type_url}")
 

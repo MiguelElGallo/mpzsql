@@ -250,10 +250,10 @@ def load_init_sql(init_sql: str | None, init_sql_file: str | None) -> str | None
     if init_sql_file:
         try:
             return Path(init_sql_file).read_text()
-        except FileNotFoundError:
-            raise typer.BadParameter(f"Init SQL file not found: {init_sql_file}")
+        except FileNotFoundError as e:
+            raise typer.BadParameter(f"Init SQL file not found: {init_sql_file}") from e
         except Exception as e:
-            raise typer.BadParameter(f"Error reading init SQL file: {e}")
+            raise typer.BadParameter(f"Error reading init SQL file: {e}") from e
     return init_sql
 
 
@@ -550,11 +550,11 @@ def main(
                     f"[red]Error:[/red] Invalid port in MPZSQL_PORT environment variable: {env_port} (must be 1-65535)"
                 )
                 raise typer.Exit(1)
-        except ValueError:
+        except ValueError as e:
             console.print(
                 f"[red]Error:[/red] Invalid port in MPZSQL_PORT environment variable: {env_port} (must be a number)"
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     username = username or os.getenv("MPZSQL_USERNAME")
     password = password or os.getenv("MPZSQL_PASSWORD")
@@ -587,7 +587,7 @@ def main(
         init_sql_content = load_init_sql(init_sql, init_sql_file)
     except typer.BadParameter as e:
         console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Validate SQLite requires database file
     if backend == "sqlite" and not database:
@@ -626,7 +626,7 @@ def main(
         )
     except Exception as e:
         console.print(f"[red]Error:[/red] Invalid configuration: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Test external connections if configured
     connection_checks_passed = True
@@ -668,12 +668,12 @@ def main(
         console.print("\n[yellow]Server stopped by user[/yellow]")
         if duckdb_con:
             duckdb_con.close()
-        raise typer.Exit(0)
+        raise typer.Exit(0) from None
     except Exception as e:
         console.print(f"[red]Server error:[/red] {e}")
         if duckdb_con:
             duckdb_con.close()
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 async def setup_azure_filesystem(account_name: str, credential):

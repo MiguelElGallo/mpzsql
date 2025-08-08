@@ -337,7 +337,7 @@ class DuckDBBackend(DatabaseBackend):
                     duckdb_log.info(f"Found {param_count} parameters in query")
 
                     # Replace each ? with a dummy value that should work for schema detection
-                    for i in range(param_count):
+                    for _i in range(param_count):
                         schema_query = schema_query.replace(
                             "?", "1", 1
                         )  # Use 1 as a generic dummy value
@@ -363,7 +363,7 @@ class DuckDBBackend(DatabaseBackend):
                         # Replace parameters with NULL for PREPARE
                         schema_query = query
                         param_count = query.count("?")
-                        for i in range(param_count):
+                        for _i in range(param_count):
                             schema_query = schema_query.replace("?", "NULL", 1)
 
                         duckdb_log.info(

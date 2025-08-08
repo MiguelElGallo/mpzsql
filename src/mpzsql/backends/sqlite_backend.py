@@ -154,7 +154,7 @@ class SQLiteBackend(DatabaseBackend):
                     return pa.schema([pa.field("result", pa.string())])
 
                 except Exception:
-                    raise e
+                    raise e from None
 
     def execute_update(self, query: str, params: list | None = None) -> int:
         """Execute an UPDATE, INSERT or DELETE statement and return the number of affected rows."""
