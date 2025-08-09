@@ -1348,6 +1348,28 @@ class DuckDBBackend(DatabaseBackend):
 
         DuckDB will automatically handle fully qualified names and create databases/schemas as needed.
         """
+        # Parse table name to show catalog/schema/table breakdown
+        if "." in table_name:
+            parts = table_name.split(".")
+            if len(parts) == 3:
+                catalog, schema, table = parts
+                duckdb_log.info(
+                    f"create_table_from_schema: PARSED CLIENT → catalog={catalog}, schema={schema}, table={table}, full_name={table_name}"
+                )
+            elif len(parts) == 2:
+                schema, table = parts
+                duckdb_log.info(
+                    f"create_table_from_schema: PARSED CLIENT → schema={schema}, table={table}, full_name={table_name} (using default catalog)"
+                )
+            else:
+                duckdb_log.info(
+                    f"create_table_from_schema: PARSED CLIENT → complex_name={table_name} (parts={len(parts)})"
+                )
+        else:
+            duckdb_log.info(
+                f"create_table_from_schema: PARSED CLIENT → simple_table={table_name} (using default catalog.schema)"
+            )
+
         # EXTENSIVE LOGGING
         duckdb_logger.info(
             "Creating empty DuckDB table from Arrow schema (streaming mode)",
@@ -1377,9 +1399,12 @@ class DuckDBBackend(DatabaseBackend):
             # Step 2: Register and create table using same pattern as batch mode
             temp_table_name = f"temp_schema_table_{uuid.uuid4().hex[:8]}"
             self.connection.register(temp_table_name, empty_table)
-            self.connection.execute(
-                f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}"
-            )
+
+            # Log the actual SQL command that will be executed
+            create_sql = f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {temp_table_name}"
+            duckdb_log.info(f"create_table_from_schema: EXECUTING SQL → {create_sql}")
+
+            self.connection.execute(create_sql)
             self.connection.unregister(temp_table_name)
 
             duckdb_logger.info(
@@ -1387,9 +1412,27 @@ class DuckDBBackend(DatabaseBackend):
                 table_name=table_name,
             )
 
-            duckdb_log.info(
-                f"create_table_from_schema: SUCCESS - empty table={table_name} created"
-            )
+            # Enhanced success logging with parsed components
+            if "." in table_name:
+                parts = table_name.split(".")
+                if len(parts) == 3:
+                    catalog, schema, table = parts
+                    duckdb_log.info(
+                        f"create_table_from_schema: SUCCESS → catalog={catalog}, schema={schema}, table={table}, full_name={table_name}"
+                    )
+                elif len(parts) == 2:
+                    schema, table = parts
+                    duckdb_log.info(
+                        f"create_table_from_schema: SUCCESS → schema={schema}, table={table}, full_name={table_name} (default catalog)"
+                    )
+                else:
+                    duckdb_log.info(
+                        f"create_table_from_schema: SUCCESS → complex_name={table_name} (parts={len(parts)})"
+                    )
+            else:
+                duckdb_log.info(
+                    f"create_table_from_schema: SUCCESS → simple_table={table_name} (default catalog.schema)"
+                )
 
         except Exception as e:
             duckdb_logger.error(
@@ -1408,6 +1451,28 @@ class DuckDBBackend(DatabaseBackend):
 
         Used in streaming mode to append each chunk to the existing table.
         """
+        # Parse table name for detailed logging
+        if "." in table_name:
+            parts = table_name.split(".")
+            if len(parts) == 3:
+                catalog, schema, table = parts
+                duckdb_log.info(
+                    f"append_table_from_arrow: TARGET → catalog={catalog}, schema={schema}, table={table}, rows={len(arrow_table)}"
+                )
+            elif len(parts) == 2:
+                schema, table = parts
+                duckdb_log.info(
+                    f"append_table_from_arrow: TARGET → schema={schema}, table={table}, rows={len(arrow_table)} (default catalog)"
+                )
+            else:
+                duckdb_log.info(
+                    f"append_table_from_arrow: TARGET → complex_name={table_name}, rows={len(arrow_table)} (parts={len(parts)})"
+                )
+        else:
+            duckdb_log.info(
+                f"append_table_from_arrow: TARGET → simple_table={table_name}, rows={len(arrow_table)} (default catalog.schema)"
+            )
+
         # EXTENSIVE LOGGING
         duckdb_logger.debug(
             "Appending Arrow data to existing DuckDB table",
@@ -1430,9 +1495,10 @@ class DuckDBBackend(DatabaseBackend):
             self.connection.register(temp_table_name, arrow_table)
 
             # Step 2: Insert from the registered table
-            self.connection.execute(
-                f"INSERT INTO {table_name} SELECT * FROM {temp_table_name}"
-            )
+            insert_sql = f"INSERT INTO {table_name} SELECT * FROM {temp_table_name}"
+            duckdb_log.info(f"append_table_from_arrow: EXECUTING SQL → {insert_sql}")
+
+            self.connection.execute(insert_sql)
 
             # Step 3: Clean up the temporary registration
             self.connection.unregister(temp_table_name)
@@ -1443,9 +1509,27 @@ class DuckDBBackend(DatabaseBackend):
                 appended_rows=len(arrow_table),
             )
 
-            duckdb_log.info(
-                f"append_table_from_arrow: SUCCESS - appended {len(arrow_table)} rows to table={table_name}"
-            )
+            # Enhanced success logging with parsed components
+            if "." in table_name:
+                parts = table_name.split(".")
+                if len(parts) == 3:
+                    catalog, schema, table = parts
+                    duckdb_log.info(
+                        f"append_table_from_arrow: SUCCESS → catalog={catalog}, schema={schema}, table={table}, appended_rows={len(arrow_table)}"
+                    )
+                elif len(parts) == 2:
+                    schema, table = parts
+                    duckdb_log.info(
+                        f"append_table_from_arrow: SUCCESS → schema={schema}, table={table}, appended_rows={len(arrow_table)} (default catalog)"
+                    )
+                else:
+                    duckdb_log.info(
+                        f"append_table_from_arrow: SUCCESS → complex_name={table_name}, appended_rows={len(arrow_table)} (parts={len(parts)})"
+                    )
+            else:
+                duckdb_log.info(
+                    f"append_table_from_arrow: SUCCESS → simple_table={table_name}, appended_rows={len(arrow_table)} (default catalog.schema)"
+                )
 
         except Exception as e:
             duckdb_logger.error(
