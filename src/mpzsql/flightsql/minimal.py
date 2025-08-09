@@ -847,7 +847,25 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
                             parts.append(str(p))
                 table_name = parts[0] if len(parts) == 1 else ".".join(parts)
 
-                actions_log.info(f"RAW PATH do_put → table: {table_name}")
+                # Parse client table identifier to show catalog/schema/table breakdown
+                if "." in table_name:
+                    name_parts = table_name.split(".")
+                    if len(name_parts) == 3:
+                        catalog, schema, table = name_parts
+                        actions_log.info(
+                            f"CLIENT PATH do_put → catalog.schema.table: {catalog}.{schema}.{table} (full: {table_name})"
+                        )
+                    elif len(name_parts) == 2:
+                        schema, table = name_parts
+                        actions_log.info(
+                            f"CLIENT PATH do_put → schema.table: {schema}.{table} (full: {table_name})"
+                        )
+                    else:
+                        actions_log.info(
+                            f"CLIENT PATH do_put → complex_table: {table_name} (parts: {len(name_parts)})"
+                        )
+                else:
+                    actions_log.info(f"CLIENT PATH do_put → simple_table: {table_name}")
                 actions_handler.flush()
 
                 incoming_schema = getattr(reader, "schema", None)
