@@ -42,8 +42,17 @@ if [[ -n "$GITHUB_ACTIONS" ]]; then
         echo "   📅 Valid until: $(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)"
         echo ""
     else
-        echo "❌ Error: TLS_CERTIFICATE or TLS_PRIVATE_KEY environment variables not set"
-        exit 1
+        echo "⚠️  Warning: TLS_CERTIFICATE or TLS_PRIVATE_KEY environment variables not set"
+        echo "📝 This is expected for:"
+        echo "   • Dependabot pull requests"
+        echo "   • External contributor pull requests"
+        echo "   • Repository forks"
+        echo ""
+        echo "⏭️  Skipping TLS E2E tests - unit tests have already validated core functionality"
+        echo "🔒 TLS E2E tests will run when secrets are available"
+        echo ""
+        echo "✅ Test suite completed successfully (TLS tests skipped due to missing secrets)"
+        exit 0
     fi
 
     # Paths for server command (relative to project root)
