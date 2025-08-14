@@ -34,7 +34,20 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y openssl
 
+    - name: Check Secret Availability
+      id: check-secrets
+      run: |
+        if [[ -n "${{ secrets.TLS_CERTIFICATE }}" ]] && [[ -n "${{ secrets.TLS_PRIVATE_KEY }}" ]]; then
+          echo "secrets-available=true" >> $GITHUB_OUTPUT
+          echo "✅ TLS secrets are available - full E2E tests will run"
+        else
+          echo "secrets-available=false" >> $GITHUB_OUTPUT
+          echo "⚠️  TLS secrets not available (likely Dependabot PR) - E2E tests will be skipped"
+          echo "🔍 Secret source: ${{ github.event.pull_request.head.repo.full_name != github.repository && 'External' || 'Actions' }}"
+        fi
+
     - name: Display Certificate Information
+      if: steps.check-secrets.outputs.secrets-available == 'true'
       env:
         TLS_CERTIFICATE: ${{ secrets.TLS_CERTIFICATE }}
       run: |
@@ -56,6 +69,7 @@ jobs:
       run: chmod +x src/demo_client/scripts/*.sh
 
     - name: Run End-to-End TLS Authentication Test
+      if: steps.check-secrets.outputs.secrets-available == 'true'
       env:
         TLS_CERTIFICATE: ${{ secrets.TLS_CERTIFICATE }}
         TLS_PRIVATE_KEY: ${{ secrets.TLS_PRIVATE_KEY }}
@@ -63,6 +77,18 @@ jobs:
         cd src/demo_client
         source ../../.venv/bin/activate
         PYTHONPATH=../.. ./scripts/test_tls_auth.sh
+
+    - name: Skip E2E Tests (Secrets Not Available)
+      if: steps.check-secrets.outputs.secrets-available == 'false'
+      run: |
+        echo "⏭️  Skipping E2E TLS tests - secrets not available"
+        echo "📝 This is expected for:"
+        echo "   • Dependabot pull requests"
+        echo "   • External contributor pull requests"
+        echo "   • Repository forks"
+        echo ""
+        echo "✅ Unit tests have already passed - basic functionality is verified"
+        echo "🔒 TLS E2E tests will run when this PR is merged or when secrets are available"
 
     - name: Upload test logs on failure
       if: failure()
