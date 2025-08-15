@@ -1664,3 +1664,313 @@ class MinimalFlightSQLServer(pf.FlightServerBase):
             command.column_name_filter_pattern = None
 
         return command
+
+    # =============================================================================
+    # Phase 1: Core Flight Protocol Methods (Required for Flight compliance)
+    # =============================================================================
+
+    def list_flights(
+        self, context: pf.ServerCallContext, criteria: bytes
+    ) -> Iterator[pf.FlightInfo]:
+        """
+        List all available flights on this server.
+
+        This implements the core Flight protocol ListFlights method,
+        providing discoverability of available data endpoints.
+        """
+        try:
+            # Log the request
+            actions_logger.info("ListFlights called", criteria_length=len(criteria))
+            routing_logger.info("Flight method: ListFlights")
+
+            # For FlightSQL, we can list common metadata endpoints
+            available_flights = []
+
+            # Add metadata endpoints that are always available
+            metadata_endpoints = [
+                ("catalogs", "Available database catalogs"),
+                ("schemas", "Available database schemas"),
+                ("tables", "Available database tables"),
+                ("table_types", "Available table types"),
+                ("sql_info", "SQL feature information"),
+            ]
+
+            for path, _description in metadata_endpoints:
+                # Create a path-based flight descriptor
+                descriptor = pf.FlightDescriptor.for_path(path)
+
+                # Create basic schema for metadata (will be refined by actual queries)
+                schema = pa.schema(
+                    [
+                        pa.field("name", pa.string()),
+                        pa.field("description", pa.string()),
+                    ]
+                )
+
+                # Create flight info
+                endpoint = pf.FlightEndpoint(
+                    ticket=pf.Ticket(path.encode("utf-8")),
+                    locations=[self.advertised_location]
+                    if hasattr(self, "advertised_location")
+                    else [],
+                )
+
+                flight_info = pf.FlightInfo(
+                    schema=schema,
+                    descriptor=descriptor,
+                    endpoints=[endpoint],
+                    total_records=-1,  # Unknown
+                    total_bytes=-1,  # Unknown
+                )
+
+                available_flights.append(flight_info)
+
+            actions_logger.info(
+                "ListFlights completed", flight_count=len(available_flights)
+            )
+            return iter(available_flights)
+
+        except Exception as e:
+            actions_logger.error("ListFlights failed", error=str(e))
+            routing_logger.error(f"ListFlights error: {e}")
+            raise
+
+    def get_schema(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pa.Schema:
+        """
+        Get schema for a flight descriptor without executing/transferring data.
+
+        This implements the core Flight protocol GetSchema method,
+        supporting both CMD (FlightSQL) and PATH descriptors.
+        """
+        try:
+            actions_logger.info(
+                "GetSchema called", descriptor_type=descriptor.descriptor_type.name
+            )
+            routing_logger.info(
+                f"Flight method: GetSchema ({descriptor.descriptor_type.name})"
+            )
+
+            if descriptor.descriptor_type == pf.DescriptorType.CMD:
+                # Handle FlightSQL command descriptors
+                return self._get_schema_for_flightsql_command(context, descriptor)
+
+            elif descriptor.descriptor_type == pf.DescriptorType.PATH:
+                # Handle path-based descriptors
+                return self._get_schema_for_path(context, descriptor)
+
+            else:
+                raise ValueError(
+                    f"Unsupported descriptor type: {descriptor.descriptor_type}"
+                )
+
+        except Exception as e:
+            actions_logger.error("GetSchema failed", error=str(e))
+            routing_logger.error(f"GetSchema error: {e}")
+            raise
+
+    def _get_schema_for_flightsql_command(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pa.Schema:
+        """Get schema for FlightSQL command descriptors."""
+        command_bytes = descriptor.command
+        any_command = parse_any_command(command_bytes)
+
+        if not any_command:
+            raise ValueError("Failed to parse command from descriptor.")
+
+        command_type_url = any_command.type_url
+
+        # Route to appropriate schema method based on command type
+        if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL:
+            command = self._parse_statement_query(any_command)
+            return self._get_statement_query_schema(command.query)
+
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+            return self._get_catalogs_schema()
+
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+            return self._get_schemas_schema()
+
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+            return self._get_tables_schema()
+
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+            return self._get_table_types_schema()
+
+        elif command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+            return self._get_sql_info_schema()
+
+        else:
+            raise NotImplementedError(
+                f"Schema not implemented for command type: {command_type_url}"
+            )
+
+    def _get_schema_for_path(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pa.Schema:
+        """Get schema for path-based descriptors."""
+        path = descriptor.path
+
+        if not path:
+            raise ValueError("Empty path in descriptor")
+
+        # Handle common metadata paths - convert bytes to strings if needed
+        path_parts = []
+        for part in path:
+            if isinstance(part, bytes):
+                path_parts.append(part.decode("utf-8"))
+            else:
+                path_parts.append(str(part))
+
+        path_str = "/".join(path_parts)
+
+        if path_str == "catalogs":
+            return self._get_catalogs_schema()
+        elif path_str == "schemas":
+            return self._get_schemas_schema()
+        elif path_str == "tables":
+            return self._get_tables_schema()
+        elif path_str == "table_types":
+            return self._get_table_types_schema()
+        elif path_str == "sql_info":
+            return self._get_sql_info_schema()
+        else:
+            # For unknown paths, return a generic schema
+            return pa.schema(
+                [pa.field("name", pa.string()), pa.field("value", pa.string())]
+            )
+
+    def _get_statement_query_schema(self, query: str) -> pa.Schema:
+        """Get schema for a SQL query without executing it."""
+        try:
+            # Use the backend to analyze the query and get schema
+            result = self.backend.execute_query(f"DESCRIBE ({query})")
+
+            # Convert describe result to Arrow schema
+            fields = []
+            for row in result:
+                # Assuming describe returns (column_name, column_type, ...)
+                field_name = str(row[0])
+                field_type_str = str(row[1])
+
+                # Map SQL types to Arrow types (simplified mapping)
+                if (
+                    "INTEGER" in field_type_str.upper()
+                    or "INT" in field_type_str.upper()
+                ):
+                    arrow_type = pa.int64()
+                elif (
+                    "FLOAT" in field_type_str.upper()
+                    or "DOUBLE" in field_type_str.upper()
+                ):
+                    arrow_type = pa.float64()
+                elif (
+                    "BOOLEAN" in field_type_str.upper()
+                    or "BOOL" in field_type_str.upper()
+                ):
+                    arrow_type = pa.bool_()
+                else:
+                    arrow_type = pa.string()  # Default to string
+
+                fields.append(pa.field(field_name, arrow_type))
+
+            return pa.schema(fields)
+
+        except Exception as e:
+            actions_logger.warning(
+                "Failed to get query schema", query=query, error=str(e)
+            )
+            # Return a generic schema as fallback
+            return pa.schema([pa.field("result", pa.string())])
+
+    def _get_catalogs_schema(self) -> pa.Schema:
+        """Get schema for catalogs metadata."""
+        return pa.schema([pa.field("catalog_name", pa.string(), nullable=False)])
+
+    def _get_schemas_schema(self) -> pa.Schema:
+        """Get schema for schemas metadata."""
+        return pa.schema(
+            [
+                pa.field("catalog_name", pa.string()),
+                pa.field("db_schema_name", pa.string(), nullable=False),
+            ]
+        )
+
+    def _get_tables_schema(self) -> pa.Schema:
+        """Get schema for tables metadata."""
+        return pa.schema(
+            [
+                pa.field("catalog_name", pa.string()),
+                pa.field("db_schema_name", pa.string()),
+                pa.field("table_name", pa.string(), nullable=False),
+                pa.field("table_type", pa.string(), nullable=False),
+            ]
+        )
+
+    def _get_table_types_schema(self) -> pa.Schema:
+        """Get schema for table types metadata."""
+        return pa.schema([pa.field("table_type", pa.string(), nullable=False)])
+
+    def _get_sql_info_schema(self) -> pa.Schema:
+        """Get schema for SQL info metadata."""
+        return pa.schema(
+            [
+                pa.field("info_name", pa.uint32(), nullable=False),
+                pa.field("value", pa.string()),
+            ]
+        )
+
+    def handshake(
+        self, context: pf.ServerCallContext, incoming_bytes: bytes
+    ) -> tuple[bytes, str]:
+        """
+        Perform authentication handshake.
+
+        This implements the core Flight protocol Handshake method,
+        enabling client authentication and capability negotiation.
+        """
+        try:
+            actions_logger.info(
+                "Handshake called", incoming_bytes_length=len(incoming_bytes)
+            )
+            routing_logger.info("Flight method: Handshake")
+
+            # For now, implement basic handshake
+            # TODO: Integrate with existing auth system in future phases
+
+            if len(incoming_bytes) == 0:
+                # Initial handshake - return server capabilities
+                response = b"MPZSQL Flight Server v1.0"
+                peer_identity = "anonymous"
+
+                actions_logger.info(
+                    "Handshake completed",
+                    peer_identity=peer_identity,
+                    response_length=len(response),
+                )
+                return response, peer_identity
+            else:
+                # Client authentication data provided
+                # For Phase 1, accept any authentication
+                try:
+                    auth_data = incoming_bytes.decode("utf-8")
+                    # Extract identity from auth data (simplified)
+                    peer_identity = f"user_{hash(auth_data) % 10000}"
+                except Exception:
+                    peer_identity = "unknown_user"
+
+                response = b"Authentication accepted"
+
+                actions_logger.info(
+                    "Handshake with auth completed",
+                    peer_identity=peer_identity,
+                    response_length=len(response),
+                )
+                return response, peer_identity
+
+        except Exception as e:
+            actions_logger.error("Handshake failed", error=str(e))
+            routing_logger.error(f"Handshake error: {e}")
+            raise

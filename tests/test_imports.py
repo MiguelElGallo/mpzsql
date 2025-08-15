@@ -33,7 +33,7 @@ def test_import_backends():
 
 def test_import_flightsql():
     """Test that FlightSQL modules can be imported."""
-    from mpzsql.flightsql import protocol, server_base
+    from mpzsql.flightsql import protocol, minimal
 
-    assert server_base is not None
+    assert minimal is not None
     assert protocol is not None
