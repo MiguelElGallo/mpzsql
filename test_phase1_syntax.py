@@ -15,7 +15,6 @@ Simple syntax and method signature verification for Phase 1 impl    if methods_o
         print("- Integration testing with Arrow Flight clients")
         print("- Phase 2: DoExchange and PollFlightInfo")
         sys.exit(0)
-"""
 
 import ast
 import sys
