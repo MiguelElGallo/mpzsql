@@ -13,10 +13,7 @@ from unittest.mock import Mock, patch
 
 import pyarrow.flight as pf
 
-from mpzsql.flightsql.server_base import (
-    FlightSqlServerBase,
-    # Add other classes/functions as available
-)
+from mpzsql.flightsql.minimal import MinimalFlightSQLServer
 
 
 class TestFlightSqlServerBase:
