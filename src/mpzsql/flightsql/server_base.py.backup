@@ -6,6 +6,7 @@ FlightSQL protocol details and command routing.
 """
 
 import logging
+import typing
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 
@@ -56,6 +57,110 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         ]
         return iter(actions)
 
+    def list_flights(
+        self, context: pf.ServerCallContext, criteria: bytes
+    ) -> Iterator[pf.FlightInfo]:
+        """List available flights/datasets.
+
+        This is a core Flight protocol method that allows clients to discover
+        available data streams. The default implementation lists tables as flights.
+        """
+        logger.debug(
+            f"ListFlights called with criteria: {len(criteria) if criteria else 0} bytes"
+        )
+
+        try:
+            # Get available tables/datasets from the implementation
+            flights = self.list_available_flights(context, criteria)
+            for flight in flights:
+                yield flight
+        except NotImplementedError:
+            # If not implemented by subclass, return empty iterator
+            logger.debug("list_available_flights not implemented, returning empty list")
+            return iter([])
+        except Exception as e:
+            logger.error(f"Error in list_flights: {e}")
+            raise
+
+    def get_schema(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pf.SchemaResult:
+        """Get schema for a flight without retrieving data.
+
+        This is a core Flight protocol method that returns just the schema
+        information for a dataset, without actually retrieving the data.
+        """
+        logger.debug(
+            f"GetSchema called with descriptor type: {descriptor.descriptor_type}"
+        )
+
+        try:
+            # Handle both CMD (FlightSQL commands) and PATH (direct dataset access) descriptors
+            if descriptor.descriptor_type == pf.DescriptorType.CMD:
+                # Parse FlightSQL command and get schema
+                command_bytes = descriptor.command
+                any_command = parse_any_command(command_bytes)
+                if any_command:
+                    schema = self.get_schema_for_command(
+                        context, descriptor, any_command
+                    )
+                else:
+                    raise ValueError("Failed to parse command from descriptor")
+            elif descriptor.descriptor_type == pf.DescriptorType.PATH:
+                # Get schema for path-based descriptor
+                schema = self.get_schema_for_path(context, descriptor.path)
+            else:
+                raise ValueError(
+                    f"Unsupported descriptor type: {descriptor.descriptor_type}"
+                )
+
+            # Serialize schema to IPC format
+            schema_bytes = schema.serialize()
+            return pf.SchemaResult(schema_bytes.to_pybytes())
+
+        except NotImplementedError:
+            logger.error("Schema retrieval not implemented by subclass")
+            raise
+        except Exception as e:
+            logger.error(f"Error in get_schema: {e}")
+            raise
+
+    def handshake(
+        self, context: pf.ServerCallContext, request_iterator
+    ) -> Iterator[pf.HandshakeResponse]:
+        """Authenticate client and establish session.
+
+        This is a core Flight protocol method for authentication handshake.
+        The default implementation supports basic authentication.
+        """
+        logger.debug("Handshake initiated")
+
+        try:
+            for request in request_iterator:
+                logger.debug(
+                    f"Handshake request: protocol_version={request.protocol_version}"
+                )
+
+                # Delegate to implementation-specific authentication
+                response_payload = self.authenticate_handshake(context, request.payload)
+
+                # Return handshake response
+                response = pf.HandshakeResponse(
+                    protocol_version=request.protocol_version, payload=response_payload
+                )
+                yield response
+
+                # For basic auth, typically only one round-trip is needed
+                break
+
+        except NotImplementedError:
+            # Default: no authentication required
+            logger.debug("No handshake authentication implemented, allowing connection")
+            yield pf.HandshakeResponse(protocol_version=1, payload=b"")
+        except Exception as e:
+            logger.error(f"Error in handshake: {e}")
+            raise
+
     def do_action(
         self, context: pf.ServerCallContext, action: pf.Action
     ) -> Iterator[pf.Result]:
@@ -79,47 +184,60 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
     def get_flight_info(
         self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
     ) -> pf.FlightInfo:
-        """Get flight info for FlightSQL commands."""
-        if descriptor.descriptor_type != pf.DescriptorType.CMD:
-            raise NotImplementedError("Only CMD descriptors are supported.")
+        """Get flight info for FlightSQL commands and generic Flight descriptors."""
+        logger.debug(f"GetFlightInfo descriptor type: {descriptor.descriptor_type}")
 
-        command_bytes = descriptor.command
-        logger.debug(f"GetFlightInfo command: {len(command_bytes)} bytes")
+        if descriptor.descriptor_type == pf.DescriptorType.CMD:
+            # Handle FlightSQL commands
+            command_bytes = descriptor.command
+            logger.debug(f"GetFlightInfo command: {len(command_bytes)} bytes")
 
-        # Parse the command using our protobuf parser
-        any_command = parse_any_command(command_bytes)
-        if not any_command:
-            raise ValueError("Failed to parse command from descriptor.")
+            # Parse the command using our protobuf parser
+            any_command = parse_any_command(command_bytes)
+            if not any_command:
+                raise ValueError("Failed to parse command from descriptor.")
 
-        command_type_url = any_command.type_url
-        logger.debug(f"Command type: {command_type_url}")
+            command_type_url = any_command.type_url
+            logger.debug(f"Command type: {command_type_url}")
 
-        # Route to appropriate method based on command type
-        if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL:
-            command = self._extract_command_statement_query(any_command)
-            return self.get_flight_info_statement(context, descriptor, command)
-        if command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
-            command = self._extract_command_get_catalogs(any_command)
-            return self.get_flight_info_catalogs(context, descriptor, command)
-        if command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
-            command = self._extract_command_get_db_schemas(any_command)
-            return self.get_flight_info_schemas(context, descriptor, command)
-        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
-            command = self._extract_command_get_tables(any_command)
-            return self.get_flight_info_tables(context, descriptor, command)
-        if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
-            command = self._extract_command_get_table_types(any_command)
-            return self.get_flight_info_table_types(context, descriptor, command)
-        if command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
-            command = self._extract_command_get_sql_info(any_command)
-            return self.get_flight_info_sql_info(context, descriptor, command)
-        if (
-            command_type_url
-            == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
-        ):
-            command = self._extract_command_prepared_statement_query(any_command)
-            return self.get_flight_info_prepared_statement(context, descriptor, command)
-        raise NotImplementedError(f"Unsupported command type: {command_type_url}")
+            # Route to appropriate method based on command type
+            if command_type_url == FlightSQLProtobuf.COMMAND_STATEMENT_QUERY_TYPE_URL:
+                command = self._extract_command_statement_query(any_command)
+                return self.get_flight_info_statement(context, descriptor, command)
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_CATALOGS_TYPE_URL:
+                command = self._extract_command_get_catalogs(any_command)
+                return self.get_flight_info_catalogs(context, descriptor, command)
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_DB_SCHEMAS_TYPE_URL:
+                command = self._extract_command_get_db_schemas(any_command)
+                return self.get_flight_info_schemas(context, descriptor, command)
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLES_TYPE_URL:
+                command = self._extract_command_get_tables(any_command)
+                return self.get_flight_info_tables(context, descriptor, command)
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_TABLE_TYPES_TYPE_URL:
+                command = self._extract_command_get_table_types(any_command)
+                return self.get_flight_info_table_types(context, descriptor, command)
+            if command_type_url == FlightSQLProtobuf.COMMAND_GET_SQL_INFO_TYPE_URL:
+                command = self._extract_command_get_sql_info(any_command)
+                return self.get_flight_info_sql_info(context, descriptor, command)
+            if (
+                command_type_url
+                == FlightSQLProtobuf.COMMAND_PREPARED_STATEMENT_QUERY_TYPE_URL
+            ):
+                command = self._extract_command_prepared_statement_query(any_command)
+                return self.get_flight_info_prepared_statement(
+                    context, descriptor, command
+                )
+            raise NotImplementedError(f"Unsupported command type: {command_type_url}")
+
+        elif descriptor.descriptor_type == pf.DescriptorType.PATH:
+            # Handle path-based descriptors (generic Flight protocol)
+            logger.debug(f"GetFlightInfo path: {descriptor.path}")
+            return self.get_flight_info_for_path(context, descriptor)
+
+        else:
+            raise ValueError(
+                f"Unsupported descriptor type: {descriptor.descriptor_type}"
+            )
 
     def do_get(
         self, context: pf.ServerCallContext, ticket: pf.Ticket
@@ -385,6 +503,81 @@ class FlightSqlServerBase(pf.FlightServerBase, ABC):
         reader: pf.FlightStreamReader,
     ) -> int:
         """Execute a prepared statement update."""
+
+    @abstractmethod
+    def get_flight_info_for_path(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pf.FlightInfo:
+        """
+        Get flight info for path-based descriptors (generic Flight protocol).
+
+        Args:
+            context: The server call context
+            descriptor: FlightDescriptor with path information
+
+        Returns:
+            FlightInfo describing the available data
+        """
+
+    @abstractmethod
+    def list_available_flights(
+        self, context: pf.ServerCallContext, criteria: bytes
+    ) -> typing.Iterable[pf.FlightInfo]:
+        """
+        List all available flights on this server.
+
+        Args:
+            context: The server call context
+            criteria: Optional criteria for filtering flights
+
+        Returns:
+            Iterable of FlightInfo objects for available flights
+        """
+
+    @abstractmethod
+    def get_schema_for_command(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pa.Schema:
+        """
+        Get schema for FlightSQL command descriptors.
+
+        Args:
+            context: The server call context
+            descriptor: FlightDescriptor containing command
+
+        Returns:
+            Arrow schema for the result set
+        """
+
+    @abstractmethod
+    def get_schema_for_path(
+        self, context: pf.ServerCallContext, descriptor: pf.FlightDescriptor
+    ) -> pa.Schema:
+        """
+        Get schema for path-based descriptors.
+
+        Args:
+            context: The server call context
+            descriptor: FlightDescriptor containing path
+
+        Returns:
+            Arrow schema for the result set
+        """
+
+    @abstractmethod
+    def authenticate_handshake(
+        self, context: pf.ServerCallContext, incoming_bytes: bytes
+    ) -> typing.Tuple[bytes, str]:
+        """
+        Perform authentication handshake.
+
+        Args:
+            context: The server call context
+            incoming_bytes: Authentication data from client
+
+        Returns:
+            Tuple of (response_bytes, peer_identity)
+        """
 
     # Helper methods
     def _create_flight_info_for_command(
