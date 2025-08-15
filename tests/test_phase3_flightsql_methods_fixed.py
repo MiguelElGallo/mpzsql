@@ -75,7 +75,10 @@ class TestPhase3DoExchange:
         writer = Mock(spec=pf.MetadataRecordBatchWriter)
         
         # Create test data with matching array lengths
-        test_batches = [pa.record_batch({"operation": ["sum"], "data": [[1, 2, 3]]})]
+        test_batches = [pa.record_batch({
+            "operation": ["sum"],
+            "data": pa.array([[1, 2, 3]], type=pa.list_(pa.int64()))
+        })]
         reader.__iter__ = Mock(return_value=iter(test_batches))
         
         if hasattr(server, 'do_exchange'):
