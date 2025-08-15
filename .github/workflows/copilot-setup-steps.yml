@@ -1,6 +1,6 @@
+name: "Copilot Setup Steps"
 permissions:
   contents: read
-name: "Copilot Setup Steps"
 on: workflow_dispatch
 jobs:
   copilot-setup-steps:
