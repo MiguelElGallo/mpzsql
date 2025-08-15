@@ -188,11 +188,11 @@ class TestPhase3DoExchange:
         
         if hasattr(server, 'do_exchange'):
             # Fixed: Use proper do_exchange signature
-        descriptor = pf.FlightDescriptor.for_command(b"test_command")
-        reader = Mock(spec=pf.MetadataRecordBatchReader)
-        writer = Mock(spec=pf.MetadataRecordBatchWriter)
-        reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
-        server.do_exchange(context, descriptor, reader, writer)
+            descriptor = pf.FlightDescriptor.for_command(b"test_command")
+            reader = Mock(spec=pf.MetadataRecordBatchReader)
+            writer = Mock(spec=pf.MetadataRecordBatchWriter)
+            reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
+            server.do_exchange(context, descriptor, reader, writer)
             # Response handling removed
             assert True  # Exchange completed
         else:
@@ -225,11 +225,11 @@ class TestPhase3DoExchange:
         
         if hasattr(server, 'do_exchange'):
             # Fixed: Use proper do_exchange signature
-        descriptor = pf.FlightDescriptor.for_command(b"test_command")
-        reader = Mock(spec=pf.MetadataRecordBatchReader)
-        writer = Mock(spec=pf.MetadataRecordBatchWriter)
-        reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
-        server.do_exchange(context, descriptor, reader, writer)
+            descriptor = pf.FlightDescriptor.for_command(b"test_command")
+            reader = Mock(spec=pf.MetadataRecordBatchReader)
+            writer = Mock(spec=pf.MetadataRecordBatchWriter)
+            reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
+            server.do_exchange(context, descriptor, reader, writer)
             # Response handling removed
             assert True  # Exchange completed
         else:
@@ -253,12 +253,11 @@ class TestPhase3DoExchange:
         if hasattr(server, 'do_exchange'):
             with pytest.raises((ValueError, NotImplementedError)):
                 # Fixed: Use proper do_exchange signature
-        descriptor = pf.FlightDescriptor.for_command(b"test_command")
-        reader = Mock(spec=pf.MetadataRecordBatchReader)
-        writer = Mock(spec=pf.MetadataRecordBatchWriter)
-        reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
-        server.do_exchange(context, descriptor, reader, writer)
-                list(response_stream)
+                descriptor = pf.FlightDescriptor.for_command(b"test_command")
+                reader = Mock(spec=pf.MetadataRecordBatchReader)
+                writer = Mock(spec=pf.MetadataRecordBatchWriter)
+                reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
+                server.do_exchange(context, descriptor, reader, writer)
         else:
             assert True
 
@@ -284,11 +283,11 @@ class TestPhase3DoExchange:
         
         if hasattr(server, 'do_exchange'):
             # Fixed: Use proper do_exchange signature
-        descriptor = pf.FlightDescriptor.for_command(b"test_command")
-        reader = Mock(spec=pf.MetadataRecordBatchReader)
-        writer = Mock(spec=pf.MetadataRecordBatchWriter)
-        reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
-        server.do_exchange(context, descriptor, reader, writer)
+            descriptor = pf.FlightDescriptor.for_command(b"test_command")
+            reader = Mock(spec=pf.MetadataRecordBatchReader)
+            writer = Mock(spec=pf.MetadataRecordBatchWriter)
+            reader.__iter__ = Mock(return_value=iter([pa.record_batch({"test": [1]})]))
+            server.do_exchange(context, descriptor, reader, writer)
             # Response handling removed
             # Should handle large data without memory issues
             assert True  # Exchange completed
