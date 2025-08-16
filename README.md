@@ -122,6 +122,49 @@ The following FlightSQL commands are not yet implemented but could be added for 
 **With Priority 1**: ~95% FlightSQL compatible
 **With full implementation**: 100% FlightSQL compatible
 
+## FlightSQL → DuckDB backend mapping
+
+This document maps FlightSQL operations to their DuckDB backend implementations and the SQL each method executes.
+
+- Flight SQL: the FlightSQL command/action.
+- Backend method: method in src/mpzsql/backends/duckdb_backend.py.
+- SQL / Behavior: the actual SQL executed (or behavior when no direct SQL).
+
+| Flight SQL                          | Backend method              | SQL / Behavior |
+|-------------------------------------|-----------------------------|----------------|
+| CommandGetCatalogs                  | get_catalogs                | SELECT DISTINCT catalog_name FROM information_schema.schemata ORDER BY catalog_name; Fallback: SHOW DATABASES |
+| CommandGetDbSchemas                 | get_db_schemas              | Base: SELECT catalog_name, schema_name AS db_schema_name FROM information_schema.schemata WHERE 1 = 1 [AND catalog_name = ? or AND catalog_name = CURRENT_DATABASE()] [AND schema_name LIKE ?] ORDER BY catalog_name, db_schema_name |
+| CommandGetTables                    | get_tables                  | Base: SELECT table_catalog AS catalog_name, table_schema AS db_schema_name, table_name, table_type FROM information_schema.tables WHERE 1=1 [AND table_catalog = ? or AND table_catalog = CURRENT_DATABASE()] [AND table_schema LIKE ?] [AND table_name LIKE ?] [AND table_type IN (?, ...)] ORDER BY table_name |
+| CommandGetTableTypes                | get_table_types             | No direct SQL; returns a static Arrow table: ["BASE TABLE","VIEW","LOCAL TEMPORARY","SYSTEM TABLE"] |
+| CommandGetColumns                   | get_columns                 | Base: SELECT table_catalog AS catalog_name, table_schema AS db_schema_name, table_name, column_name, data_type, ordinal_position AS "DECIMAL_DIGITS", 'YES' AS "IS_NULLABLE", 0 AS "NUM_PREC_RADIX" FROM information_schema.columns WHERE 1=1 [AND table_catalog = '...'] [AND table_schema LIKE '...'] [AND table_name LIKE '...'] [AND column_name LIKE '...'] ORDER BY table_catalog, table_schema, table_name, ordinal_position; Then reshapes to FlightSQL GetColumns schema (adds/mapps data_type codes, etc.) |
+| CommandGetSqlInfo                   | get_sql_info                | No direct SQL; returns a placeholder Arrow table from provided info codes |
+| CommandStatementQuery               | execute_query               | Executes client-provided SELECT/SQL and returns Arrow table (varies per client query) |
+| CommandStatementUpdate              | execute_update              | Executes client-provided DML (INSERT/UPDATE/DELETE); returns affected rows (DuckDB returns BIGINT count) |
+| CommandPreparedStatementQuery       | get_statement_schema (prepare phase) / execute_query (execution) | Prepare phase (schema inference): typically PREPARE stmt AS {query}; DESCRIBE stmt; DEALLOCATE stmt. For parameterized queries: attempts a LIMIT 0 variant replacing ? with 1; fallback to PREPARE with NULLs. Execution: same as CommandStatementQuery with parameters |
+| CommandPreparedStatementUpdate      | execute_update              | Executes client-provided DML with bound parameters; returns affected rows |
+| Action: CreatePreparedStatement     | get_statement_schema        | Same schema inference logic as above: PREPARE/ DESCRIBE/ DEALLOCATE; for parameterized queries, tries LIMIT 0 with dummy values, fallback PREPARE with NULLs |
+| Action: ClosePreparedStatement      | —                           | No backend SQL; server clears cached handle |
+| Action: BeginTransaction / EndTransaction | —                      | No backend SQL in current DuckDB backend; transaction state tracked in server layer |
+| Action: CloseSession                | —                           | No backend SQL; server/session cleanup only |
+
+Notes:
+- Patterns: Incoming FlightSQL patterns use * and are converted to SQL LIKE % in backend methods.
+- CURRENT_DATABASE(): When catalog is not provided for GetTables/GetDbSchemas, backend uses CURRENT_DATABASE() to match FlightSQL metadata behavior.
+- Errors/Empty results: On errors, backend returns empty Arrow tables with correct schemas where appropriate.
+
+## Arrow Flight → DuckDB backend mapping
+
+This document maps core Arrow Flight methods implemented in [`MinimalFlightSQLServer`](src/mpzsql/flightsql/minimal.py) to DuckDB backend behavior in [`DuckDBBackend`](src/mpzsql/backends/duckdb_backend.py), including the SQL they execute (when applicable).
+
+Reference: https://arrow.apache.org/docs/python/api/flight.html
+
+| Arrow Flight API | Server method | Backend method(s) | DuckDB SQL / Behavior |
+| --- | --- | --- | --- |
+| Handshake | [`MinimalFlightSQLServer.handshake`](src/mpzsql/flightsql/minimal.py) | — | Authentication handshake; no SQL. Returns capability/auth messages. |
+| ListFlights | [`MinimalFlightSQLServer.list_flights`](src/mpzsql/flightsql/minimal.py) | — | Advertises a few metadata endpoints as PATH descriptors; no SQL. |
+| GetSchema (DescriptorType.PATH) | [`MinimalFlightSQLServer._get_schema_for_path`](src/mpzsql/flightsql/minimal.py) | — | Static schemas for “catalogs”, “schemas”, “tables”, “table_types”, “sql_info”. Unknown paths return a generic schema; no SQL. |
+| GetFlightInfo (DescriptorType.PATH: “<table_name>”) | [`MinimalFlightSQLServer.get_flight_info`](src/mpzsql/flightsql/minimal.py) | [`DuckDBBackend.get_table_schema`](src/mpzsql/backends/duckdb_backend.py), [`DuckDBBackend.get_table_row_count`](src/mpzsql/backends/duckdb_backend.py) | Schema: inferred via a lightweight select (typically `SELECT * FROM {table_name} LIMIT 1`) to get Arrow schema. Row count: `SELECT COUNT(*) FROM {table_name}`. Ticket returned: `PATH:{table_name}`. |
+| DoGet (Ticket produced by PATH GetFlightInfo) | [`MinimalFlightSQLServer.do_get`](src/mpzsql/flightsql/minimal.py) | — | MISSING: current implementation does
 ## Configuration Options
 
 MPZSQL can be configured using command-line switches or environment variables. Environment variables take precedence over CLI defaults but CLI switches take precedence over environment variables (except for MPZSQL_PORT which always takes precedence).
