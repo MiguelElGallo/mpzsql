@@ -25,6 +25,10 @@ dependencies = [
     "pytest-cov>=6.2.1",
     "grpcio-tools>=1.74.0",
     "snowflake>=1.7.0",
+    "adbc-driver-snowflake>=1.7.0",
+    "pandas>=2.3.1",
+    "debugpy>=1.8.16",
+    "pre-commit>=4.3.0",
 ]
 
 [project.scripts]

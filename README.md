@@ -10,7 +10,7 @@ See these resources for more understanding:
 - [My initial idea](https://www.linkedin.com/pulse/thinking-ducklake-architecture-miguel-peredo-z%25C3%25BCrcher-lt5ff/?trackingId=2dHjs0mPQGi8Y3YKEIshhw%3D%3D)
 - A [demo of what you can achieve](https://www.youtube.com/watch?v=-Dx_qz7s-Ds) if you make it run.
 
-***Note*** The azure part showed in the video is not part of this repository, that you will need to figure by yourself, at least for now.
+***Update 12-Sep-2025*** The Azure deploment repo can be found here: https://github.com/MiguelElGallo/mpzsql_azinfra
 
 
 ## Warning!
