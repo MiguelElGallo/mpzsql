@@ -10,12 +10,14 @@ See these resources for more understanding:
 - [My initial idea](https://www.linkedin.com/pulse/thinking-ducklake-architecture-miguel-peredo-z%25C3%25BCrcher-lt5ff/?trackingId=2dHjs0mPQGi8Y3YKEIshhw%3D%3D)
 - A [demo of what you can achieve](https://www.youtube.com/watch?v=-Dx_qz7s-Ds) if you make it run.
 
+***Update 17-Sep-2025*** MPZSQL now targets DuckDB 1.4.0 alongside the DuckLake 0.3 platform update. Read more about the DuckLake 0.3 release [here](https://ducklake.select/2025/09/17/ducklake-03/).
+
 ***Update 12-Sep-2025*** The Azure deploment repo can be found here: https://github.com/MiguelElGallo/mpzsql_azinfra
 
 
 ## Warning!
 
-This software is in experimental state. I have not tested the security features yet. The software it uses like [DuckLake](https://github.com/duckdb/ducklake) is also in experimental state. (As of July 2025)
+This software is in experimental state. I have not tested the security features yet. The software it uses like [DuckLake](https://github.com/duckdb/ducklake) is also in experimental state. (Aligned with the September 2025 DuckLake 0.3 release and DuckDB 1.4.0 runtime.)
 
 ***Do NOT use in production!***
 
