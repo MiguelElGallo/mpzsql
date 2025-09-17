@@ -308,14 +308,19 @@ class DuckDBBackend(DatabaseBackend):
         if isinstance(arrow_result, pa.RecordBatch):
             return pa.Table.from_batches([arrow_result])
 
-        if isinstance(arrow_result, Iterable):
+        if isinstance(arrow_result, Iterable) and not isinstance(
+            arrow_result, (str, bytes, bytearray)
+        ):
             batches = list(arrow_result)
             if batches and all(isinstance(batch, pa.RecordBatch) for batch in batches):
                 return pa.Table.from_batches(batches)
             if hasattr(arrow_result, "schema") and isinstance(
                 arrow_result.schema, pa.Schema
             ):
-                return pa.table({}, schema=arrow_result.schema)
+                raise ValueError(
+                    "Iterable has a schema but does not contain any RecordBatch objects. "
+                    "This may indicate data loss or an unexpected result."
+                )
 
         raise TypeError(
             f"Unsupported Arrow result type from DuckDB: {type(arrow_result)!r}"

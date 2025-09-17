@@ -129,10 +129,10 @@ def test_ensure_arrow_table_from_iterable_batches(backend: DuckDBBackend) -> Non
     ]
 
 
-def test_ensure_arrow_table_iterable_schema_only_placeholder(
+def test_ensure_arrow_table_iterable_schema_without_batches_errors(
     backend: DuckDBBackend,
 ) -> None:
-    """Iterables exposing a schema attribute should return an empty table with that schema."""
+    """Iterables declaring a schema but yielding no record batches should raise an error."""
 
     schema = pa.schema([])
 
@@ -143,11 +143,8 @@ def test_ensure_arrow_table_iterable_schema_only_placeholder(
         def __iter__(self):
             return iter(())
 
-    materialized = backend._ensure_arrow_table(SchemaIterable(schema))
-
-    assert isinstance(materialized, pa.Table)
-    assert materialized.schema == schema
-    assert materialized.num_rows == 0
+    with pytest.raises(ValueError):
+        backend._ensure_arrow_table(SchemaIterable(schema))
 
 
 def test_ensure_arrow_table_unsupported_type(backend: DuckDBBackend) -> None:
@@ -155,3 +152,10 @@ def test_ensure_arrow_table_unsupported_type(backend: DuckDBBackend) -> None:
 
     with pytest.raises(TypeError):
         backend._ensure_arrow_table(42)
+
+
+def test_ensure_arrow_table_ignores_string_iterables(backend: DuckDBBackend) -> None:
+    """Plain string iterables should not be treated as batches and must raise TypeError."""
+
+    with pytest.raises(TypeError):
+        backend._ensure_arrow_table("not arrow batches")
