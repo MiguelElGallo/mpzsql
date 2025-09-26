@@ -203,6 +203,160 @@ class MPZSQLFlightClient:
             logging.error(f"Failed to execute query: {e}")
             raise
 
+    def execute_sql_file(self, file_path: str, limit: int = 10) -> None:
+        """
+        Execute SQL commands from a file.
+
+        Args:
+            file_path: Path to the SQL file
+            limit: Maximum number of rows to display for SELECT queries
+        """
+        if not self.connection:
+            raise RuntimeError("Not connected - call connect() first")
+
+        try:
+            # Read the SQL file
+            sql_file = Path(file_path)
+            if not sql_file.exists():
+                raise FileNotFoundError(f"SQL file not found: {file_path}")
+
+            print(f"📄 Executing SQL file: {file_path}")
+            print("=" * 60)
+
+            with open(sql_file, "r", encoding="utf-8") as f:
+                sql_content = f.read()
+
+            # Split the content into individual statements
+            # Simple split by semicolon - could be improved for complex cases
+            statements = [
+                stmt.strip() for stmt in sql_content.split(";") if stmt.strip()
+            ]
+
+            if not statements:
+                print("No SQL statements found in file")
+                return
+
+            print(f"Found {len(statements)} SQL statement(s) in file\n")
+
+            # Use the same cursor throughout to maintain session state
+            cursor = self.connection.cursor()
+
+            try:
+                # Execute each statement
+                for i, statement in enumerate(statements, 1):
+                    try:
+                        print(f"📝 Statement {i}/{len(statements)}:")
+                        print(
+                            f"   {statement[:100]}{'...' if len(statement) > 100 else ''}"
+                        )
+                        print("-" * 50)
+
+                        # Execute the statement
+                        cursor.execute(statement)
+
+                        # Try to commit after each statement to ensure persistence
+                        try:
+                            self.connection.commit()
+                        except Exception:
+                            # Some connections might not support explicit commits
+                            pass
+
+                        # Check if this is a SELECT statement
+                        # Strip comments and whitespace to properly detect SELECT statements
+                        clean_statement = statement.strip()
+                        # Remove comment lines
+                        statement_lines = [
+                            line
+                            for line in clean_statement.split("\n")
+                            if not line.strip().startswith("--")
+                        ]
+                        clean_statement = "\n".join(statement_lines).strip()
+                        is_select = clean_statement.upper().startswith("SELECT")
+
+                        if is_select:
+                            # Try to fetch results using ADBC fetch_df for better compatibility
+                            try:
+                                print(
+                                    "   DEBUG: Attempting to fetch results for SELECT query..."
+                                )
+                                df = cursor.fetch_df()
+                                print(
+                                    f"   DEBUG: fetch_df() returned DataFrame with shape: {df.shape}"
+                                )
+
+                                if len(df) > 0:
+                                    print(f"✅ Statement returned {len(df)} rows")
+
+                                    print("\nSchema:")
+                                    for col in df.columns:
+                                        dtype = str(df[col].dtype)
+                                        print(f"  {col}: {dtype}")
+
+                                    print(f"\nFirst {min(limit, len(df))} rows:")
+                                    print(df.head(limit).to_string(index=False))
+                                else:
+                                    print(
+                                        "✅ Statement executed successfully (no rows returned)"
+                                    )
+
+                            except Exception as fetch_error:
+                                print(
+                                    f"   DEBUG: fetch_df() failed with error: {fetch_error}"
+                                )
+                                # Try alternative method with fetchall
+                                try:
+                                    print(
+                                        "   DEBUG: Trying alternative fetchall() method..."
+                                    )
+                                    rows = cursor.fetchall()
+                                    columns = (
+                                        [desc[0] for desc in cursor.description]
+                                        if cursor.description
+                                        else []
+                                    )
+                                    print(
+                                        f"   DEBUG: fetchall() returned {len(rows) if rows else 0} rows, {len(columns)} columns"
+                                    )
+
+                                    if rows and columns:
+                                        df = pd.DataFrame(rows, columns=columns)
+                                        print(f"✅ Statement returned {len(df)} rows")
+                                        print(f"\nFirst {min(limit, len(df))} rows:")
+                                        print(df.head(limit).to_string(index=False))
+                                    else:
+                                        print(
+                                            "✅ Statement executed successfully (no rows from fetchall)"
+                                        )
+
+                                except Exception as alt_error:
+                                    print(
+                                        f"   DEBUG: fetchall() also failed: {alt_error}"
+                                    )
+                                    print(
+                                        f"✅ Statement executed successfully (error fetching results: {fetch_error})"
+                                    )
+                        else:
+                            print(
+                                "✅ Statement executed successfully (no results expected)"
+                            )
+
+                        print()  # Add spacing between statements
+
+                    except Exception as e:
+                        print(f"❌ Statement {i} failed: {e}")
+                        logging.error(f"Failed to execute statement {i}: {e}")
+                        print()
+                        continue
+
+                print("🎉 SQL file execution completed!")
+
+            finally:
+                cursor.close()
+
+        except Exception as e:
+            logging.error(f"Failed to execute SQL file: {e}")
+            raise
+
     def get_server_info(self) -> None:
         """Get basic server information."""
         if not self.cursor:
@@ -329,6 +483,7 @@ Examples:
   %(prog)s --list-databases                 # List available databases
   %(prog)s --query "SHOW TABLES"            # Execute a SQL query
   %(prog)s --query "SELECT * FROM my_table LIMIT 5"  # Query data
+  %(prog)s --file "queries.sql"             # Execute SQL commands from file
   
 Environment variables (set by test_postgresql_config.sh):
   MPZSQL_USERNAME        - Username for authentication
@@ -358,6 +513,7 @@ Environment variables (set by test_postgresql_config.sh):
         "--list-databases", action="store_true", help="List available databases"
     )
     parser.add_argument("--query", metavar="SQL", help="Execute SQL query")
+    parser.add_argument("--file", metavar="PATH", help="Execute SQL commands from file")
     parser.add_argument(
         "--limit",
         type=int,
@@ -392,6 +548,8 @@ Environment variables (set by test_postgresql_config.sh):
             client.show_databases()
         elif args.query:
             client.execute_query(args.query, args.limit)
+        elif args.file:
+            client.execute_sql_file(args.file, args.limit)
         else:
             # Default: show basic server info
             print("Connected successfully to MPZSQL Flight Server!")

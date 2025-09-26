@@ -56,6 +56,7 @@ if [ $# -eq 0 ]; then
     echo "   $0 --list-databases                    # List available databases"
     echo "   $0 --query \"SHOW TABLES\"               # Execute SQL query"
     echo "   $0 --query \"SELECT * FROM my_table LIMIT 5\"  # Query with limit"
+    echo "   $0 --file \"sample_commands.sql\"        # Execute SQL file"
     echo "   $0 --verbose --info                    # Enable verbose logging"
     echo ""
     echo "For more options, run: $0 --help"

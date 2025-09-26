@@ -60,10 +60,13 @@ class DuckDBBackend(DatabaseBackend):
             # Use a simple check to avoid duplicate setup
             try:
                 # Try to check if setup was already done by testing a known extension
-                self.connection.execute(
-                    "SELECT * FROM pragma_database_list();"
+                result = self.connection.execute(
+                    "SHOW DATABASES;"
                 ).fetchall()
                 logger.info("Existing connection appears to be configured")
+                logger.info("Databases found:")
+                for db in result:
+                    logger.info(f" - {db[0]}")
             except Exception:
                 # If there's any issue, just run setup
                 self._setup_duckdb()
@@ -403,21 +406,34 @@ class DuckDBBackend(DatabaseBackend):
             prepare_query = f"PREPARE stmt AS {query}"
             self.connection.execute(prepare_query)
 
-            # Get the prepared statement info
-            describe_result = self.connection.execute("DESCRIBE stmt").fetchall()
-
-            # Clean up the prepared statement
-            self.connection.execute("DEALLOCATE stmt")
-
-            fields = []
-            for row in describe_result:
-                col_name = row[0]
-                col_type = row[1]
-                # Convert DuckDB types to Arrow types
-                arrow_type = self._duckdb_type_to_arrow(col_type)
-                fields.append(pa.field(col_name, arrow_type))
-
-            return pa.schema(fields)
+            # For DuckDB, we need to execute the prepared statement to get schema info
+            # We can't use DESCRIBE on prepared statements, so we execute with LIMIT 0
+            try:
+                if query_upper.startswith("SELECT "):
+                    # Execute the prepared statement with no results to get schema
+                    limited_query = f"EXECUTE stmt"
+                    # First try to get just the schema without executing
+                    result = self.connection.execute(f"SELECT * FROM ({query}) LIMIT 0").arrow()
+                    schema = result.schema
+                    
+                    # Clean up the prepared statement
+                    self.connection.execute("DEALLOCATE stmt")
+                    
+                    duckdb_log.info(f"Created schema from prepared statement: {schema}")
+                    return schema
+                else:
+                    # For non-SELECT statements, return empty schema
+                    self.connection.execute("DEALLOCATE stmt")
+                    return pa.schema([])
+                    
+            except Exception as exec_error:
+                duckdb_log.error(f"Failed to get schema from prepared statement: {exec_error}")
+                # Clean up the prepared statement
+                try:
+                    self.connection.execute("DEALLOCATE stmt")
+                except:
+                    pass
+                # Fall through to the fallback approach
 
         except Exception as e:
             logger.error(f"Schema analysis with PREPARE failed: {e}")

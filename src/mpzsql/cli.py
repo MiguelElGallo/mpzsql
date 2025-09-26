@@ -809,25 +809,26 @@ async def initialize_duckdb_with_azure(
                     console.print(f"❌ Failed to create PostgreSQL secret: {e}")
                     raise
 
-            # Create Azure secret
-            console.print("\n🔐 Creating Azure secret...")
-            try:
-                azure_secret_sql = f"""
-                CREATE OR REPLACE SECRET secr_azure_lake1 (
-                    TYPE azure,
-                    PROVIDER CREDENTIAL_CHAIN,
-                    ACCOUNT_NAME '{config.azure_storage_account}'
-                );
-                """
-                result = con.execute(azure_secret_sql).fetchall()
-                console.print("✅ Azure secret created successfully")
-                console.print(f"   Result: {result}")
-            except Exception as e:
-                console.print(f"❌ Failed to create Azure secret: {e}")
-                raise
-
             # Attach ducklake catalog if PostgreSQL is configured
             if config.is_postgresql_enabled:
+                # Create Azure secret (required for DuckLake storage)
+                console.print("\n🔐 Creating Azure secret for DuckLake...")
+                try:
+                    azure_secret_sql = f"""
+                    CREATE OR REPLACE SECRET secr_azure_lake1 (
+                        TYPE azure,
+                        PROVIDER CREDENTIAL_CHAIN,
+                        ACCOUNT_NAME '{config.azure_storage_account}'
+                    );
+                    """
+                    result = con.execute(azure_secret_sql).fetchall()
+                    console.print("✅ Azure secret created successfully")
+                    console.print(f"   Result: {result}")
+                except Exception as e:
+                    console.print(f"❌ Failed to create Azure secret: {e}")
+                    raise
+
+                # Now both secrets are ready, attach DuckLake catalog
                 console.print("\n🔗 Attaching ducklake catalog...")
                 try:
                     attach_sql = f"""
@@ -855,15 +856,51 @@ async def initialize_duckdb_with_azure(
                         "SELECT current_database();"
                     ).fetchall()
                     console.print(f"✅ Current database: {current_db_result[0][0]}")
+                    
+                    # Verify Azure container access with CSV read test
+                    console.print("\n🔍 Verifying Azure container access...")
+                    try:
+                        csv_uri = f"abfs://{config.azure_storage_account}.dfs.core.windows.net/{config.azure_storage_container}/dummy.csv"
+                        console.print(f"   Testing access to: {csv_uri}")
+                        
+                        verification_sql = f"""
+                        SELECT
+                            *
+                        FROM
+                            '{csv_uri}' AS server
+                        LIMIT 5;
+                        """
+                        
+                        result = con.execute(verification_sql).fetchall()
+                        console.print("✅ Azure container access verified successfully")
+                        console.print(f"   Retrieved {len(result)} sample rows from dummy.csv")
+                        
+                    except Exception as e:
+                        console.print(f"❌ FATAL: Azure container access verification failed: {e}")
+                        console.print(f"   Could not read from: {csv_uri}")
+                        console.print("   This is a fatal error - DuckLake integration requires Azure access")
+                        console.print("   🛑 SERVER STARTUP ABORTED - Fix Azure configuration and try again")
+                        # Use a specific exception type to prevent fallback
+                        raise SystemExit(f"FATAL: Azure container verification failed: {e}")
+                        
                 except Exception as e:
                     console.print(f"❌ Failed to attach ducklake catalog: {e}")
-                    raise
+                    # Check if this is our fatal Azure error
+                    if "Azure container verification failed" in str(e):
+                        # Re-raise as SystemExit to prevent fallback
+                        raise SystemExit(str(e))
+                    else:
+                        # Other errors can still fallback
+                        raise
 
             console.print(
                 "\n🎉 DuckDB with Azure integration initialized successfully!"
             )
             return con
 
+    except SystemExit:
+        # Don't catch SystemExit - let it propagate to stop the server
+        raise
     except Exception as e:
         console.print(f"\n❌ Failed to initialize DuckDB with Azure: {e}")
         console.print("\n🔄 Falling back to basic DuckDB initialization...")
