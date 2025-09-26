@@ -1,505 +1,423 @@
 #!/usr/bin/env python3
-"""Demo FlightSQL client for MPZSQL server.
+"""
+Arrow Flight Client with TLS and Authentication Support
 
-This client connects to the MPZSQL server using ADBC with TLS encryption and authentication.
-It allows executing SQL queries and displaying results in a user-friendly format.
+This client connects to an Arrow Flight server using:
+- ADBC FlightSQL driver for reliable connections
+- TLS encryption with certificates
+- Basic authentication with username/password
+- Support for various Flight SQL operations
 
+Configuration is loaded from the environment variables set by test_postgresql_config.sh
 """
 
+import argparse
 import base64
 import logging
+import os
+import sys
 from pathlib import Path
 
-import adbc_driver_flightsql.dbapi as flightsql_dbapi
-import pyarrow as pa
-import typer
+import pandas as pd
 from adbc_driver_flightsql import DatabaseOptions
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-
-# Create typer app and rich console
-app = typer.Typer(
-    name="mpzsql-client",
-    help="Demo client for MPZSQL FlightSQL server",
-    add_completion=False,
-)
-console = Console()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from adbc_driver_flightsql import dbapi as flightsql_dbapi
 
 
-class MPZSQLClient:
-    """FlightSQL client for connecting to MPZSQL server using ADBC."""
+class ServerConfig:
+    """Configuration holder for server connection details."""
 
-    def __init__(
-        self,
-        host: str,
-        port: int,
-        username: str | None = None,
-        password: str | None = None,
-        certificate: str | None = None,
-    ):
-        """Initialize the client with connection parameters."""
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-        self.certificate = certificate
+    def __init__(self):
+        self.host: str = "127.0.0.1"
+        self.port: int = 8080
+        self.username: str = ""
+        self.password: str = ""
+        self.tls_cert_path: str = ""
+        self.tls_key_path: str = ""
+
+
+def read_server_config() -> ServerConfig:
+    """
+    Read server configuration from environment variables.
+
+    Expected environment variables (set by test_postgresql_config.sh):
+    - MPZSQL_USERNAME: Username for authentication
+    - MPZSQL_PASSWORD: Password for authentication
+    - MPZSQL_TLS_CERT_PATH: Path to TLS certificate file
+    - MPZSQL_TLS_KEY_PATH: Path to TLS private key file
+
+    Returns:
+        ServerConfig: Configuration object with connection details
+
+    Raises:
+        ValueError: If required environment variables are missing or files don't exist
+    """
+    config = ServerConfig()
+
+    # Get authentication credentials
+    config.username = os.getenv("MPZSQL_USERNAME", "")
+    config.password = os.getenv("MPZSQL_PASSWORD", "")
+
+    # Get TLS certificate paths
+    config.tls_cert_path = os.getenv("MPZSQL_TLS_CERT_PATH", "")
+    config.tls_key_path = os.getenv("MPZSQL_TLS_KEY_PATH", "")
+
+    # Validate required configuration
+    if not config.username:
+        raise ValueError("MPZSQL_USERNAME environment variable is required")
+    if not config.password:
+        raise ValueError("MPZSQL_PASSWORD environment variable is required")
+    if not config.tls_cert_path:
+        raise ValueError("MPZSQL_TLS_CERT_PATH environment variable is required")
+    if not config.tls_key_path:
+        raise ValueError("MPZSQL_TLS_KEY_PATH environment variable is required")
+
+    # Validate certificate files exist
+    if not Path(config.tls_cert_path).exists():
+        raise ValueError(f"TLS certificate file not found: {config.tls_cert_path}")
+    if not Path(config.tls_key_path).exists():
+        raise ValueError(f"TLS private key file not found: {config.tls_key_path}")
+
+    logging.info("Configuration loaded:")
+    logging.info(f"  Server: {config.host}:{config.port}")
+    logging.info(f"  Username: {config.username}")
+    logging.info(f"  TLS Certificate: {config.tls_cert_path}")
+    logging.info(f"  TLS Key: {config.tls_key_path}")
+
+    return config
+
+
+class MPZSQLFlightClient:
+    """
+    Arrow Flight client for connecting to MPZSQL server using ADBC with TLS and authentication.
+    """
+
+    def __init__(self, config: ServerConfig):
+        """Initialize client with server configuration."""
+        self.config = config
         self.connection = None
+        self.cursor = None
 
-    def connect(self) -> bool:
-        """Establish connection to the FlightSQL server using ADBC."""
+    def connect(self) -> None:
+        """Establish secure connection with TLS and authentication using ADBC."""
         try:
-            # Build connection URI based on GizmoSQL client implementation
-            if self.certificate:
-                # Use TLS if certificate is provided
-                uri = f"grpc+tls://{self.host}:{self.port}"
-                console.print(
-                    f"[blue]🔐 Connecting to FlightSQL server at {uri} with TLS...[/blue]"
-                )
-            else:
-                # Use plain TCP
-                uri = f"grpc://{self.host}:{self.port}"
-                console.print(
-                    f"[blue]🔗 Connecting to FlightSQL server at {uri}...[/blue]"
-                )
+            # Create connection URL for TLS
+            connection_url = f"grpc+tls://{self.config.host}:{self.config.port}"
 
-            # Add TLS certificate if provided
-            if self.certificate:
-                cert_path = Path(self.certificate)
-                if cert_path.exists():
-                    console.print(f"[blue]📜 Using TLS certificate: {cert_path}[/blue]")
-                else:
-                    console.print(
-                        f"[red]❌ Certificate file not found: {self.certificate}[/red]"
-                    )
-                    return False
+            logging.info(
+                f"Connecting to {connection_url} with TLS and authentication..."
+            )
 
-            # Configure ADBC connection with TLS + Authentication
+            # Configure ADBC connection parameters
             db_kwargs = {}
 
-            # Add authentication using ADBC DatabaseOptions (if provided)
-            if self.username and self.password:
-                console.print(
-                    f"[blue]🔑 Authenticating as user: {self.username}[/blue]"
-                )
-                # Use the working ADBC authentication method
+            # Add authentication using Base64 Basic authentication
+            if self.config.username and self.config.password:
                 auth_header = base64.b64encode(
-                    f"{self.username}:{self.password}".encode()
+                    f"{self.config.username}:{self.config.password}".encode()
                 ).decode()
                 db_kwargs[DatabaseOptions.AUTHORIZATION_HEADER.value] = (
                     f"Basic {auth_header}"
                 )
+                logging.info(f"Added authentication for user: {self.config.username}")
 
-            # Add TLS skip verify for self-signed certificates
-            if self.certificate:
-                db_kwargs[DatabaseOptions.TLS_SKIP_VERIFY.value] = "true"
+            # Skip TLS verification for self-signed certificates
+            db_kwargs[DatabaseOptions.TLS_SKIP_VERIFY.value] = "true"
 
-            # Create ADBC connection with proper authentication and TLS
+            # Create ADBC connection
             self.connection = flightsql_dbapi.connect(
-                uri, db_kwargs=db_kwargs if db_kwargs else None
+                uri=connection_url, db_kwargs=db_kwargs
             )
 
-            console.print(
-                "[green]✅ Connected to FlightSQL server with TLS + Authentication[/green]"
-            )
-            return True
+            # Create cursor for operations
+            self.cursor = self.connection.cursor()
+
+            logging.info("Client connected and authenticated successfully using ADBC")
 
         except Exception as e:
-            console.print(f"[red]❌ Failed to connect: {e}[/red]")
-            logger.error(f"Connection failed: {e}")
-            return False
+            logging.error(f"Failed to connect: {e}")
+            raise
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Close the connection to the server."""
-        if self.connection:
-            self.connection.close()
-            self.connection = None
-            console.print("[yellow]📡 Disconnected from server[/yellow]")
+        try:
+            if self.cursor:
+                self.cursor.close()
+                self.cursor = None
+            if self.connection:
+                self.connection.close()
+                self.connection = None
+            logging.info("Disconnected from server")
+        except Exception as e:
+            logging.warning(f"Error during disconnect: {e}")
 
-    def execute_query(self, sql: str) -> pa.Table | None:
-        """Execute a SQL query and return the result as a PyArrow table."""
-        if not self.connection:
-            console.print("[red]❌ Not connected to server[/red]")
-            return None
+    def execute_query(self, sql: str, limit: int = 10) -> None:
+        """
+        Execute a SQL query and display results.
+
+        Args:
+            sql: SQL query to execute
+            limit: Maximum number of rows to display
+        """
+        if not self.cursor:
+            raise RuntimeError("Not connected - call connect() first")
 
         try:
-            console.print(f"[blue]🔍 Executing query: {sql}[/blue]")
+            print(f"Executing query: {sql}")
+            print("-" * 50)
 
-            # Create cursor and execute query
-            cursor = self.connection.cursor()
-            cursor.execute(sql)
+            # Execute the query
+            self.cursor.execute(sql)
 
-            # Get result as PyArrow table
-            table = cursor.fetch_arrow_table()
-
-            console.print(
-                f"[green]✅ Query executed successfully. Rows: {table.num_rows}[/green]"
+            # Get column names
+            columns = (
+                [desc[0] for desc in self.cursor.description]
+                if self.cursor.description
+                else []
             )
-            return table
+
+            if not columns:
+                print("Query executed successfully (no results returned)")
+                return
+
+            # Fetch results
+            rows = self.cursor.fetchall()
+
+            if not rows:
+                print("No rows returned")
+                return
+
+            print(f"Query returned {len(rows)} rows")
+
+            # Convert to pandas DataFrame for nice display
+            df = pd.DataFrame(rows, columns=columns)
+
+            print("\nSchema:")
+            for col in df.columns:
+                dtype = str(df[col].dtype)
+                print(f"  {col}: {dtype}")
+
+            print(f"\nFirst {min(limit, len(df))} rows:")
+            print(df.head(limit).to_string(index=False))
 
         except Exception as e:
-            console.print(f"[red]❌ Query failed: {e}[/red]")
-            logger.error(f"Query execution failed: {e}")
-            return None
+            logging.error(f"Failed to execute query: {e}")
+            raise
 
-    def execute_update(self, sql: str) -> bool:
-        """Execute a DDL/DML statement (CREATE, INSERT, UPDATE, DELETE) that doesn't return a result set."""
-        if not self.connection:
-            console.print("[red]❌ Not connected to server[/red]")
-            return False
+    def get_server_info(self) -> None:
+        """Get basic server information."""
+        if not self.cursor:
+            raise RuntimeError("Not connected - call connect() first")
 
         try:
-            console.print(f"[blue]🔍 Executing statement: {sql}[/blue]")
+            print("Server Information:")
+            print("-" * 50)
 
-            # Create cursor and execute statement
-            cursor = self.connection.cursor()
-            cursor.execute(sql)
-
-            # For DDL/DML operations, we don't fetch results, just check if it succeeded
-            # The operation succeeded if no exception was thrown
-            console.print("[green]✅ Statement executed successfully[/green]")
-            return True
-
-        except Exception as e:
-            console.print(f"[red]❌ Statement failed: {e}[/red]")
-            logger.error(f"Statement execution failed: {e}")
-            return False
-
-    def get_server_info(self) -> bool:
-        """Get server information."""
-        if not self.connection:
-            console.print("[red]❌ Not connected to server[/red]")
-            return False
-
-        try:
-            console.print("[blue]📊 Getting server information...[/blue]")
-
-            # Try to get some basic server info using SQL
-            cursor = self.connection.cursor()
-
-            # Try some standard queries to test connectivity
+            # Try some basic queries to test the connection
             test_queries = [
-                ("Server Test", "SELECT 1 as connection_test"),
-                ("Current Time", "SELECT CURRENT_TIMESTAMP as server_time"),
+                ("Server Version", "SELECT version() as version"),
+                ("Current Time", "SELECT CURRENT_TIMESTAMP as current_time"),
+                ("Test Query", "SELECT 1 as test_value, 'Hello MPZSQL' as message"),
             ]
 
             for name, query in test_queries:
                 try:
-                    cursor.execute(query)
-                    result = cursor.fetch_arrow_table()
-                    console.print(f"  • {name}: ✅ (Rows: {result.num_rows})")
+                    self.cursor.execute(query)
+                    result = self.cursor.fetchone()
+                    if result:
+                        print(f"{name}: {result[0]}")
+                    else:
+                        print(f"{name}: No result")
                 except Exception as e:
-                    console.print(f"  • {name}: ❌ ({str(e)[:50]}...)")
-
-            return True
+                    print(f"{name}: Error - {e}")
 
         except Exception as e:
-            console.print(f"[red]❌ Failed to get server info: {e}[/red]")
-            logger.error(f"Get server info failed: {e}")
-            return False
+            logging.error(f"Failed to get server info: {e}")
+            raise
 
-    def list_catalogs(self) -> bool:
-        """List available catalogs."""
-        if not self.connection:
-            console.print("[red]❌ Not connected to server[/red]")
-            return False
+    def list_tables(self) -> None:
+        """List available tables."""
+        if not self.cursor:
+            raise RuntimeError("Not connected - call connect() first")
 
         try:
-            console.print("[blue]📁 Listing catalogs...[/blue]")
+            print("Available Tables:")
+            print("-" * 50)
 
-            # Try different ways to list databases/catalogs
-            catalog_queries = [
-                "SHOW DATABASES",
-                "SHOW SCHEMAS",
-                "SELECT 1 as test_catalog",  # Fallback test query
+            # Try different approaches to list tables
+            table_queries = [
+                "SHOW TABLES",
+                "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE'",
+                "PRAGMA show_tables",  # DuckDB specific
             ]
 
-            for query in catalog_queries:
+            success = False
+            for query in table_queries:
                 try:
-                    result = self.execute_query(query)
-                    if result and result.num_rows > 0:
-                        self._display_table(result, f"Results from: {query}")
-                        return True
-                except Exception:
+                    self.cursor.execute(query)
+                    rows = self.cursor.fetchall()
+
+                    if rows:
+                        print(f"Tables found using: {query}")
+                        for i, row in enumerate(rows, 1):
+                            table_name = row[0] if row else "Unknown"
+                            print(f"  {i}. {table_name}")
+                        success = True
+                        break
+
+                except Exception as e:
+                    logging.debug(f"Query '{query}' failed: {e}")
                     continue
 
-            console.print("[yellow]📄 No catalog information available[/yellow]")
-            return True
+            if not success:
+                print("No tables found or unable to list tables")
+                print("Try executing a custom query with --query option")
 
         except Exception as e:
-            console.print(f"[red]❌ Failed to list catalogs: {e}[/red]")
-            logger.error(f"List catalogs failed: {e}")
-            return False
+            logging.error(f"Failed to list tables: {e}")
+            raise
 
-    def _display_table(self, table: pa.Table, title: str = "Query Results"):
-        """Display a PyArrow table in a nice format."""
-        if table.num_rows == 0:
-            console.print(f"[yellow]📄 {title}: No data returned[/yellow]")
-            return
+    def show_databases(self) -> None:
+        """Show available databases."""
+        if not self.cursor:
+            raise RuntimeError("Not connected - call connect() first")
 
-        # Create rich table
-        rich_table = Table(title=title, show_header=True, header_style="bold magenta")
-
-        # Add columns
-        for column in table.column_names:
-            rich_table.add_column(column)
-
-        # Add rows (limit to first 100 for display)
-        max_rows = min(table.num_rows, 100)
-        for i in range(max_rows):
-            row = []
-            for col_name in table.column_names:
-                value = table[col_name][i].as_py()
-                row.append(str(value) if value is not None else "NULL")
-            rich_table.add_row(*row)
-
-        if table.num_rows > 100:
-            rich_table.add_row(*["..." for _ in table.column_names])
-
-        console.print(rich_table)
-        console.print(f"[dim]Showing {max_rows} of {table.num_rows} rows[/dim]")
-
-
-@app.command()
-def connect(
-    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
-    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
-    username: str | None = typer.Option(
-        None, "--user", "-u", help="Username for authentication"
-    ),
-    password: str | None = typer.Option(
-        None, "--password", "-P", help="Password for authentication"
-    ),
-    certificate: str | None = typer.Option(
-        None, "--cert", "-c", help="Path to TLS certificate file"
-    ),
-    interactive: bool = typer.Option(
-        True, "--interactive/--no-interactive", "-i", help="Start interactive mode"
-    ),
-):
-    """Connect to MPZSQL FlightSQL server."""
-    # Display connection info
-    panel_text = Text()
-    panel_text.append("MPZSQL FlightSQL Demo Client\n\n", style="bold blue")
-    panel_text.append(f"Host: {host}\n", style="cyan")
-    panel_text.append(f"Port: {port}\n", style="cyan")
-    if username:
-        panel_text.append(f"Username: {username}\n", style="cyan")
-    if certificate:
-        panel_text.append(f"Certificate: {certificate}\n", style="cyan")
-
-    console.print(Panel(panel_text, title="Connection Parameters", border_style="blue"))
-
-    # Create and connect client
-    client = MPZSQLClient(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        certificate=certificate,
-    )
-
-    if not client.connect():
-        console.print("[red]❌ Failed to establish connection[/red]")
-        raise typer.Exit(1)
-
-    try:
-        # Get server info
-        client.get_server_info()
-
-        if interactive:
-            console.print(
-                "\n[bold green]🎯 Interactive mode started. Type 'help' for commands, 'quit' to exit.[/bold green]"
-            )
-            _interactive_mode(client)
-        else:
-            # Just test the connection and exit
-            console.print("[green]✅ Connection test successful[/green]")
-
-    finally:
-        client.disconnect()
-
-
-def _interactive_mode(client: MPZSQLClient):
-    """Run interactive mode for the client."""
-    while True:
         try:
-            command = typer.prompt("\nmpzsql> ", type=str).strip()
+            print("Available Databases:")
+            print("-" * 50)
 
-            if command.lower() in ["quit", "exit", "q"]:
-                console.print("[yellow]👋 Goodbye![/yellow]")
-                break
+            database_queries = [
+                "SHOW DATABASES",
+                "PRAGMA show_databases",  # DuckDB specific
+                "SELECT datname FROM pg_database",  # PostgreSQL style
+            ]
 
-            if command.lower() in ["help", "h"]:
-                _show_help()
+            success = False
+            for query in database_queries:
+                try:
+                    self.cursor.execute(query)
+                    rows = self.cursor.fetchall()
 
-            elif command.lower() in ["info", "server"]:
-                client.get_server_info()
+                    if rows:
+                        print(f"Databases found using: {query}")
+                        for i, row in enumerate(rows, 1):
+                            db_name = row[0] if row else "Unknown"
+                            print(f"  {i}. {db_name}")
+                        success = True
+                        break
 
-            elif command.lower() in ["catalogs", "databases"]:
-                client.list_catalogs()
+                except Exception as e:
+                    logging.debug(f"Query '{query}' failed: {e}")
+                    continue
 
-            elif command.lower().startswith("select") or command.lower().startswith(
-                "show"
-            ):
-                result = client.execute_query(command)
-                if result:
-                    client._display_table(result)
+            if not success:
+                print("No databases found or unable to list databases")
 
-            elif command:
-                # Try to execute as SQL
-                result = client.execute_query(command)
-                if result:
-                    client._display_table(result)
-
-            else:
-                console.print(
-                    "[yellow]Empty command. Type 'help' for available commands.[/yellow]"
-                )
-
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Use 'quit' to exit.[/yellow]")
-        except EOFError:
-            console.print("\n[yellow]👋 Goodbye![/yellow]")
-            break
         except Exception as e:
-            console.print(f"[red]❌ Error: {e}[/red]")
+            logging.error(f"Failed to show databases: {e}")
+            raise
 
 
-def _show_help():
-    """Show help information."""
-    help_table = Table(
-        title="Available Commands", show_header=True, header_style="bold magenta"
-    )
-    help_table.add_column("Command", style="cyan", no_wrap=True)
-    help_table.add_column("Description", style="white")
-
-    help_table.add_row("help, h", "Show this help message")
-    help_table.add_row("info, server", "Get server information")
-    help_table.add_row("catalogs, databases", "List available catalogs/databases")
-    help_table.add_row("SELECT ...", "Execute a SQL query")
-    help_table.add_row("SHOW ...", "Execute a SHOW command")
-    help_table.add_row("quit, exit, q", "Exit the client")
-
-    console.print(help_table)
-
-
-@app.command()
-def query(
-    sql: str = typer.Argument(..., help="SQL query to execute"),
-    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
-    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
-    username: str | None = typer.Option(
-        None, "--user", "-u", help="Username for authentication"
-    ),
-    password: str | None = typer.Option(
-        None, "--password", "-P", help="Password for authentication"
-    ),
-    certificate: str | None = typer.Option(
-        None, "--cert", "-c", help="Path to TLS certificate file"
-    ),
-):
-    """Execute a single SQL query and exit."""
-    # Create and connect client
-    client = MPZSQLClient(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        certificate=certificate,
+def main():
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Arrow Flight Client for MPZSQL Server with TLS and Authentication (ADBC)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --info                           # Show server information
+  %(prog)s --list-tables                    # List available tables
+  %(prog)s --list-databases                 # List available databases
+  %(prog)s --query "SHOW TABLES"            # Execute a SQL query
+  %(prog)s --query "SELECT * FROM my_table LIMIT 5"  # Query data
+  
+Environment variables (set by test_postgresql_config.sh):
+  MPZSQL_USERNAME        - Username for authentication
+  MPZSQL_PASSWORD        - Password for authentication  
+  MPZSQL_TLS_CERT_PATH   - Path to TLS certificate file
+  MPZSQL_TLS_KEY_PATH    - Path to TLS private key file
+        """,
     )
 
-    if not client.connect():
-        console.print("[red]❌ Failed to establish connection[/red]")
-        raise typer.Exit(1)
+    # Connection options
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Server hostname (default: 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=8080, help="Server port (default: 8080)"
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
+    )
+
+    # Operations
+    parser.add_argument("--info", action="store_true", help="Show server information")
+    parser.add_argument(
+        "--list-tables", action="store_true", help="List available tables"
+    )
+    parser.add_argument(
+        "--list-databases", action="store_true", help="List available databases"
+    )
+    parser.add_argument("--query", metavar="SQL", help="Execute SQL query")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Limit rows in query results (default: 10)",
+    )
+
+    args = parser.parse_args()
+
+    # Setup logging
+    log_level = logging.INFO if args.verbose else logging.WARNING
+    logging.basicConfig(
+        level=log_level, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     try:
-        result = client.execute_query(sql)
-        if result:
-            client._display_table(result)
+        # Load configuration
+        config = read_server_config()
+        config.host = args.host
+        config.port = args.port
+
+        # Create and connect client
+        client = MPZSQLFlightClient(config)
+        client.connect()
+
+        # Execute requested operations
+        if args.info:
+            client.get_server_info()
+        elif args.list_tables:
+            client.list_tables()
+        elif args.list_databases:
+            client.show_databases()
+        elif args.query:
+            client.execute_query(args.query, args.limit)
         else:
-            raise typer.Exit(1)
+            # Default: show basic server info
+            print("Connected successfully to MPZSQL Flight Server!")
+            print(f"Server: {config.host}:{config.port}")
+            print(f"Username: {config.username}")
+            print("\nUse --help to see available operations")
+            print("\nTesting connection...")
+            client.get_server_info()
 
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        if args.verbose:
+            logging.exception("Operation failed")
+        else:
+            print(f"Error: {e}")
+        sys.exit(1)
     finally:
-        client.disconnect()
-
-
-@app.command()
-def execute(
-    sql: str = typer.Argument(
-        ..., help="SQL statement to execute (CREATE, INSERT, UPDATE, DELETE)"
-    ),
-    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
-    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
-    username: str | None = typer.Option(
-        None, "--user", "-u", help="Username for authentication"
-    ),
-    password: str | None = typer.Option(
-        None, "--password", "-P", help="Password for authentication"
-    ),
-    certificate: str | None = typer.Option(
-        None, "--cert", "-c", help="Path to TLS certificate file"
-    ),
-):
-    """Execute a DDL/DML statement (CREATE, INSERT, UPDATE, DELETE) and exit."""
-    # Create and connect client
-    client = MPZSQLClient(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        certificate=certificate,
-    )
-
-    if not client.connect():
-        console.print("[red]❌ Failed to establish connection[/red]")
-        raise typer.Exit(1)
-
-    try:
-        success = client.execute_update(sql)
-        if not success:
-            raise typer.Exit(1)
-
-    finally:
-        client.disconnect()
-
-
-@app.command()
-def test_connection(
-    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
-    port: int = typer.Option(8080, "--port", "-p", help="Server port"),
-    username: str | None = typer.Option(
-        None, "--user", "-u", help="Username for authentication"
-    ),
-    password: str | None = typer.Option(
-        None, "--password", "-P", help="Password for authentication"
-    ),
-    certificate: str | None = typer.Option(
-        None, "--cert", "-c", help="Path to TLS certificate file"
-    ),
-):
-    """Test connection to the server without interactive mode."""
-    client = MPZSQLClient(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        certificate=certificate,
-    )
-
-    if client.connect():
-        client.get_server_info()
-        client.disconnect()
-        console.print("[green]✅ Connection test successful[/green]")
-    else:
-        console.print("[red]❌ Connection test failed[/red]")
-        raise typer.Exit(1)
+        # Clean up
+        try:
+            if "client" in locals():
+                client.disconnect()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
-    app()
+    main()

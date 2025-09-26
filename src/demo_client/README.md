@@ -1,165 +1,192 @@
-# MPZSQL Demo Client
+# MPZSQL Arrow Flight Client
 
-This demo client shows how to connect to the MPZSQL FlightSQL server and perform basic operations using the ADBC FlightSQL driver.
+This is a simple Arrow Flight client that connects to the MPZSQL server using TLS encryption and basic authentication.
 
 ## Features
 
-- Connect to MPZSQL FlightSQL server using ADBC (Apache Arrow Database Connectivity)
-- Support for TLS connections with certificates
-- Basic authentication with username/password
-- Interactive SQL query execution
-- Command-line single query execution
-- Connection testing
-- Beautiful terminal output with Rich
+- **TLS Encryption**: Secure connections using certificates from `test_postgresql_config.sh`
+- **Basic Authentication**: Username/password authentication with bearer token support
+- **Modular Design**: Separate functions for configuration, connection, authentication, and operations
+- **Command Line Interface**: Easy-to-use CLI with multiple operation modes
+- **Error Handling**: Comprehensive error handling and logging support
+
+## Prerequisites
+
+1. **Server Running**: Make sure the MPZSQL server is running on `127.0.0.1:8080`
+2. **Environment Setup**: Environment variables must be set via `test_postgresql_config.sh`
+3. **Python Dependencies**: Ensure `pyarrow` is installed in your environment
 
 ## Quick Start
 
-**Note: Commands below assume you're in the `src/demo_client/` directory:**
+### Using the Shell Script (Recommended)
+
+The easiest way to run the client is using the provided shell script:
 
 ```bash
-cd src/demo_client/
+# Navigate to the demo client directory
+cd src/demo_client
+
+# Basic connection test (loads config and connects)
+./client.sh
+
+# List all available flights
+./client.sh --list
+
+# Execute a SQL query
+./client.sh --query "SHOW TABLES"
+
+# Get information about a specific flight/table
+./client.sh --flight-info "my_table"
+
+# Execute a server action
+./client.sh --action "GetSqlInfo"
+
+# Enable verbose logging
+./client.sh --verbose --query "SELECT 1 as test"
 ```
 
-### Run the Demo
+### Using Python Directly
 
-The easiest way to test the client is to run the demo script:
+You can also run the client directly with Python after setting up the environment:
 
 ```bash
-# From src/demo_client/ directory
-python demo.py
+# Load environment variables
+source ../../test_postgresql_config.sh
+
+# Activate virtual environment (if available)
+source ../../.venv/bin/activate
+
+# Run the client
+python client.py --help
+python client.py --list
+python client.py --query "SHOW TABLES"
 ```
 
-This will connect to a server running on `127.0.0.1:8080` and execute several test queries.
+## Environment Variables
 
-### Basic Usage
+The client reads configuration from these environment variables (set by `test_postgresql_config.sh`):
 
-Test connection:
+- `MPZSQL_USERNAME`: Username for authentication (default from config: "user")
+- `MPZSQL_PASSWORD`: Password for authentication (default from config: "password")
+- `MPZSQL_TLS_CERT_PATH`: Path to TLS certificate file
+- `MPZSQL_TLS_KEY_PATH`: Path to TLS private key file
+
+## Available Operations
+
+### List Flights
 ```bash
-# From src/demo_client/ directory
-python client.py test-connection
+./client.sh --list
 ```
+Lists all available datasets/tables on the server with schema information.
 
-Execute a single query:
+### Execute SQL Query
 ```bash
-python client.py query "SELECT 1 as test, 'Hello World' as message"
+./client.sh --query "SELECT * FROM my_table LIMIT 10"
+./client.sh --query "SHOW TABLES" --limit 20
 ```
+Execute SQL queries and display results. Use `--limit` to control how many rows are shown.
 
-Start interactive mode:
+### Get Flight Information
 ```bash
-python client.py connect
+./client.sh --flight-info "table_name"
+./client.sh --flight-info "SELECT * FROM table_name"
 ```
+Get metadata about a specific flight/table including schema and endpoint information.
+
+### Execute Server Actions
+```bash
+./client.sh --action "GetSqlInfo"
+./client.sh --action "GetCatalogs"
+./client.sh --action "GetDbSchemas" --action-body "catalog_name"
+```
+Execute custom server actions with optional body parameters.
 
 ## Command Line Options
 
-All commands support the following options:
-
-- `--host`, `-h`: Server host (default: 127.0.0.1)
-- `--port`, `-p`: Server port (default: 8080)
-- `--user`, `-u`: Username for authentication (optional)
-- `--password`, `-P`: Password for authentication (optional)
-- `--cert`, `-c`: Path to TLS certificate file (optional)
-
-## Interactive Commands
-
-When in interactive mode, you can use the following commands:
-
-- `help` or `h`: Show available commands
-- `info` or `server`: Get server information
-- `catalogs` or `databases`: List available catalogs/databases
-- `SELECT ...`: Execute SQL queries
-- `SHOW ...`: Execute SHOW commands
-- `quit`, `exit`, or `q`: Exit the client
+- `--host HOST`: Server hostname (default: 127.0.0.1)
+- `--port PORT`: Server port (default: 8080)  
+- `--verbose, -v`: Enable verbose logging
+- `--list`: List all available flights
+- `--query SQL`: Execute SQL query
+- `--flight-info PATH`: Get flight information
+- `--action TYPE`: Execute server action
+- `--action-body BODY`: Body for server action
+- `--limit N`: Limit rows in query results (default: 10)
 
 ## Examples
 
-### Basic Connection Test
-
+### Basic Server Information
 ```bash
-# Test connection to local server
-python src/demo_client/client.py test-connection
-
-# Test connection with custom host/port
-python src/demo_client/client.py test-connection --host localhost --port 9090
+# Test connection and show server info
+./client.sh
 ```
 
-### Query Execution
-
+### Database Exploration
 ```bash
-# Execute a simple query
-python src/demo_client/client.py query "SELECT 1 as id, 'Hello World' as message"
+# List all tables
+./client.sh --query "SHOW TABLES"
 
-# Execute a query with authentication
-python src/demo_client/client.py query "SHOW TABLES" --user admin --password secret
+# Show table schema
+./client.sh --flight-info "my_table"
+
+# Query data with limit
+./client.sh --query "SELECT * FROM orders" --limit 5
 ```
 
-### Interactive Session
-
+### Server Capabilities
 ```bash
-# Start interactive session
-python src/demo_client/client.py connect
+# Get SQL info
+./client.sh --action "GetSqlInfo"
 
-# Example interactive session:
-mpzsql> SELECT 1 as test
-mpzsql> SHOW DATABASES
-mpzsql> help
-mpzsql> quit
+# Get catalogs
+./client.sh --action "GetCatalogs"
+
+# Get schemas  
+./client.sh --action "GetDbSchemas"
 ```
 
-### TLS and Authentication Examples
-
+### Debugging
 ```bash
-# Test connection with TLS and authentication
-python src/demo_client/client.py test-connection \
-    --cert certs/server.crt \
-    --user admin \
-    --password secret
-
-# Execute query with TLS
-python src/demo_client/client.py query "SELECT * FROM test_table" \
-    --cert certs/server.crt \
-    --user admin \
-    --password secret \
-    --host localhost \
-    --port 8080
-
-# Interactive session with TLS and authentication
-python src/demo_client/client.py connect \
-    --cert certs/server.crt \
-    --user admin \
-    --password secret
+# Enable verbose logging for troubleshooting
+./client.sh --verbose --list
+./client.sh --verbose --query "SELECT 1"
 ```
 
-### Using the Helper Scripts
+## Architecture
 
-The project includes helper scripts for easy testing with TLS and authentication:
+The client is structured with clear separation of concerns:
 
-```bash
-# Generate self-signed certificates
-./generate_cert.sh
+1. **Configuration (`read_server_config()`)**: Loads settings from environment variables
+2. **TLS Connection (`create_tls_connection()`)**: Establishes encrypted connection using certificates  
+3. **Authentication (`authenticate_client()`)**: Performs basic auth and gets bearer token
+4. **Client Class (`MPZSQLFlightClient`)**: Main client class with operation methods
+5. **CLI Interface (`main()`)**: Command line argument parsing and execution
 
-# Start server with TLS and authentication
-./start_server_tls.sh
+## Error Handling
 
-# Connect client with TLS and authentication
-./client_tls.sh
+The client includes comprehensive error handling for:
+- Missing environment variables or certificate files
+- TLS connection failures
+- Authentication errors
+- Query execution errors
+- Network timeouts and connection issues
 
-# Run comprehensive test suite
-./test_tls_auth.sh
-```
+Use `--verbose` flag to get detailed error information and logs.
 
-## Dependencies
+## Troubleshooting
 
-The client uses the following main dependencies:
+### Connection Issues
+1. Verify the server is running: Check that MPZSQL server is running on 127.0.0.1:8080
+2. Check certificates: Ensure certificate paths in config are correct and files exist
+3. Verify credentials: Check that username/password in config are correct
 
-- `pyarrow`: For FlightSQL communication
-- `typer`: For CLI interface
-- `rich`: For beautiful terminal output
+### Environment Issues  
+1. Load config: Make sure to source `test_postgresql_config.sh` before running
+2. Virtual environment: Activate the Python virtual environment if using one
+3. Dependencies: Ensure `pyarrow` is installed: `pip install pyarrow`
 
-These are already included in the main project dependencies.
-
-## Notes
-
-- The client defaults to connecting to `127.0.0.1:8080` which is the default MPZSQL server configuration
-- Authentication is optional - the server may or may not require it depending on configuration
-- TLS support is available if you have a certificate file
-- All query results are displayed in a formatted table with a limit of 100 rows for readability
+### Common Error Messages
+- "MPZSQL_USERNAME environment variable is required": Source the config file
+- "TLS certificate file not found": Check certificate path in config
+- "Authentication failed": Verify username/password are correct
+- "Connection refused": Ensure server is running on the specified host/port

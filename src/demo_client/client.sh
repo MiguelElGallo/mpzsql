@@ -1,20 +1,7 @@
 #!/bin/bash
-# Helper script for MPZSQL demo client operations.
-# Usage: ./client.sh [command] [options]
-#
-# Commands:
-#   demo     - Run the demo script
-#   test     - Test connection to server
-#   query    - Execute a single query (requires query as second argument)
-#   connect  - Start interactive mode
-#   help     - Show this help
-#
-# Examples:
-#   ./client.sh demo
-#   ./client.sh test
-#   ./client.sh query "SELECT 1 as test"
-#   ./client.sh connect
-#   ./client.sh connect --user admin --password secret
+
+# MPZSQL Flight Client Launcher Script
+# This script sets up the environment and runs the Arrow Flight client with TLS and authentication
 
 set -e
 
@@ -22,70 +9,61 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
-# Python executable (use virtual environment if available)
-if [ -f "$PROJECT_ROOT/.venv/bin/python" ]; then
-    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+echo "🚀 MPZSQL Arrow Flight Client"
+echo "============================="
+
+# Load environment variables from config
+CONFIG_FILE="$PROJECT_ROOT/test_postgresql_config.sh"
+if [[ -f "$CONFIG_FILE" ]]; then
+    echo "📋 Loading configuration from $CONFIG_FILE..."
+    source "$CONFIG_FILE"
+    echo "✅ Configuration loaded successfully"
 else
-    PYTHON="python3"
+    echo "❌ Error: Configuration file not found at $CONFIG_FILE"
+    echo "Please ensure test_postgresql_config.sh exists in the project root"
+    exit 1
 fi
 
-# Change to project root
-cd "$PROJECT_ROOT"
+# Activate virtual environment if it exists
+VENV_PATH="$PROJECT_ROOT/.venv/bin/activate"
+if [[ -f "$VENV_PATH" ]]; then
+    echo "� Activating Python virtual environment..."
+    source "$VENV_PATH"
+    echo "✅ Virtual environment activated"
+fi
 
-case "${1:-help}" in
-    "demo")
-        echo "🚀 Running MPZSQL FlightSQL Demo..."
-        "$PYTHON" src/demo_client/demo.py
-        ;;
+# Check if client.py exists
+CLIENT_PATH="$SCRIPT_DIR/client.py"
+if [[ ! -f "$CLIENT_PATH" ]]; then
+    echo "❌ Error: client.py not found at $CLIENT_PATH"
+    exit 1
+fi
 
-    "test")
-        echo "🔧 Testing connection to MPZSQL server..."
-        "$PYTHON" src/demo_client/client.py test-connection "${@:2}"
-        ;;
+# Display configuration
+echo ""
+echo "🔧 Connection Configuration:"
+echo "   Server: 127.0.0.1:8080"
+echo "   Username: $MPZSQL_USERNAME"
+echo "   TLS Certificate: $MPZSQL_TLS_CERT_PATH"
+echo "   TLS Key: $MPZSQL_TLS_KEY_PATH"
+echo ""
 
-    "query")
-        if [ -z "$2" ]; then
-            echo "❌ Error: Query required"
-            echo "Usage: $0 query \"SELECT 1 as test\""
-            exit 1
-        fi
-        echo "📝 Executing query: $2"
-        "$PYTHON" src/demo_client/client.py query "$2" "${@:3}"
-        ;;
+# Show usage if no arguments provided
+if [ $# -eq 0 ]; then
+    echo "📚 Usage Examples:"
+    echo "   $0 --info                              # Show server information"
+    echo "   $0 --list-tables                       # List available tables"
+    echo "   $0 --list-databases                    # List available databases"
+    echo "   $0 --query \"SHOW TABLES\"               # Execute SQL query"
+    echo "   $0 --query \"SELECT * FROM my_table LIMIT 5\"  # Query with limit"
+    echo "   $0 --verbose --info                    # Enable verbose logging"
+    echo ""
+    echo "For more options, run: $0 --help"
+    echo ""
+fi
 
-    "connect")
-        echo "🔗 Starting interactive mode..."
-        "$PYTHON" src/demo_client/client.py connect "${@:2}"
-        ;;
-
-    "help"|"--help"|"-h")
-        echo "MPZSQL FlightSQL Demo Client Helper"
-        echo "=================================="
-        echo ""
-        echo "Usage: $0 [command] [options]"
-        echo ""
-        echo "Commands:"
-        echo "  demo     - Run the demo script"
-        echo "  test     - Test connection to server"
-        echo "  query    - Execute a single query (requires query as second argument)"
-        echo "  connect  - Start interactive mode"
-        echo "  help     - Show this help"
-        echo ""
-        echo "Examples:"
-        echo "  $0 demo"
-        echo "  $0 test"
-        echo "  $0 test --host localhost --port 9090"
-        echo "  $0 query \"SELECT 1 as test\""
-        echo "  $0 query \"SELECT * FROM my_table\" --user admin --password secret"
-        echo "  $0 connect"
-        echo "  $0 connect --user admin --password secret"
-        echo ""
-        echo "Default server: 127.0.0.1:8080"
-        ;;
-
-    *)
-        echo "❌ Unknown command: $1"
-        echo "Run '$0 help' for usage information"
-        exit 1
-        ;;
-esac
+# Change to the client directory and run the client
+cd "$SCRIPT_DIR"
+echo "▶️  Running: python client.py $*"
+echo ""
+python client.py "$@"
