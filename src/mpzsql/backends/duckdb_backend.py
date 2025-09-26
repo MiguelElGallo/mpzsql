@@ -292,6 +292,28 @@ class DuckDBBackend(DatabaseBackend):
             )
             return table
 
+    def _clean_sql_query(self, query: str) -> str:
+        """Clean SQL query by removing comments and normalizing whitespace."""
+        lines = []
+        for line in query.split("\n"):
+            # Remove single-line comments (-- comments)
+            if "--" in line:
+                line = line[: line.index("--")]
+            # Strip whitespace and skip empty lines
+            line = line.strip()
+            if line:
+                lines.append(line)
+
+        cleaned = " ".join(lines)
+
+        # Remove /* block comments */
+        while "/*" in cleaned and "*/" in cleaned:
+            start = cleaned.index("/*")
+            end = cleaned.index("*/", start) + 2
+            cleaned = cleaned[:start] + " " + cleaned[end:]
+
+        return cleaned.strip()
+
     def get_statement_schema(self, query: str) -> pa.Schema:
         """Get the schema for a SQL statement without executing it.
 
@@ -302,7 +324,13 @@ class DuckDBBackend(DatabaseBackend):
         4. Fallback to direct LIMIT 0 for simple non-parameterized queries
         """
         # Handle non-SELECT statements that don't have a schema
-        query_upper = query.strip().upper()
+        # Clean query first to remove comments that might interfere with detection
+        cleaned_query = self._clean_sql_query(query)
+        query_upper = cleaned_query.strip().upper()
+
+        duckdb_log.info(f"Original query: {query[:100]}...")
+        duckdb_log.info(f"Cleaned query: {cleaned_query[:100]}...")
+
         if (
             query_upper.startswith("USE ")
             or query_upper.startswith("SET ")
@@ -314,8 +342,13 @@ class DuckDBBackend(DatabaseBackend):
             or query_upper.startswith("DELETE ")
             or query_upper.startswith("ATTACH ")
             or query_upper.startswith("DETACH ")
+            or query_upper.startswith("TRUNCATE ")
+            or query_upper.startswith("COMMENT ")
         ):
             # These statements don't return data, so return empty schema
+            duckdb_log.info(
+                f"DDL/DML statement detected: {query_upper[:50]}... - returning empty schema"
+            )
             return pa.schema([])
 
         # Handle SHOW DATABASES specifically
@@ -325,16 +358,47 @@ class DuckDBBackend(DatabaseBackend):
 
         duckdb_log.info(f"Getting schema for query: {query}")
 
-        # Try the Recommended approach: PREPARE + duckdb_prepared_statements() + LIMIT 0
+        # Simple approach: Direct PREPARE with comprehensive error handling
         stmt_name = f"schema_stmt_{uuid.uuid4().hex[:8]}"
 
         try:
-            # Step 1: Create prepared statement
+            # Step 1: Create prepared statement with enhanced BinderException handling
             prepare_query = f"PREPARE {stmt_name} AS {query}"
+            duckdb_log.info(f"Attempting to prepare statement: {stmt_name}")
+
             self.connection.execute(prepare_query)
             duckdb_log.info(f"Successfully prepared statement: {stmt_name}")
 
-            # Step 2: Get prepared statement metadata
+        except Exception as prepare_error:
+            # Handle ALL preparation errors (including BinderException)
+            error_msg = str(prepare_error)
+            duckdb_log.error(f"PREPARE statement failed: {error_msg}")
+
+            # Check for BinderException and related errors
+            if any(
+                keyword in error_msg.lower()
+                for keyword in [
+                    "binder error",
+                    "referenced column",
+                    "not found",
+                    "table does not exist",
+                    "column does not exist",
+                    "not available",
+                ]
+            ):
+                duckdb_log.warning(
+                    "BinderException detected - Query contains invalid references"
+                )
+                duckdb_log.warning("Returning empty schema to prevent server issues")
+                duckdb_log.info(f"Binder error details: {error_msg}")
+                return pa.schema([])
+            else:
+                # Re-raise other types of errors
+                duckdb_log.info("Non-binder error in PREPARE - re-raising")
+                raise
+
+        # Continue with normal schema extraction - Step 2: Get prepared statement metadata
+        try:
             result = self.connection.execute(
                 "SELECT * FROM duckdb_prepared_statements()"
             ).fetchall()
@@ -419,12 +483,26 @@ class DuckDBBackend(DatabaseBackend):
 
         except Exception as prepare_error:
             duckdb_log.error(f"PREPARE approach failed: {prepare_error}")
+            error_message = str(prepare_error)
 
             # Clean up in case of partial success
             try:
                 self.connection.execute(f"DEALLOCATE {stmt_name}")
             except Exception:
                 pass
+
+            # Check if this is a BinderException or similar error that indicates invalid SQL
+            if any(
+                keyword in error_message.lower()
+                for keyword in ["binder error", "referenced column", "not found"]
+            ):
+                duckdb_log.warning(
+                    f"Query contains invalid column references: {error_message}"
+                )
+                duckdb_log.warning(
+                    "Returning empty schema for query with invalid column references"
+                )
+                return pa.schema([])
 
             # Fallback: Direct LIMIT 0 approach for non-parameterized queries
             if "?" not in query:
