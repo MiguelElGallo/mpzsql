@@ -7,8 +7,6 @@ including query execution, schema introspection, and metadata operations.
 import logging
 import os
 import uuid
-from collections.abc import Iterable
-from typing import Any
 
 import duckdb
 import pyarrow as pa
@@ -293,39 +291,6 @@ class DuckDBBackend(DatabaseBackend):
             )
             return table
 
-    def _ensure_arrow_table(self, arrow_result: Any) -> pa.Table:
-        """Ensure DuckDB Arrow results are materialized as ``pyarrow.Table`` instances."""
-
-        if isinstance(arrow_result, pa.Table):
-            return arrow_result
-
-        if hasattr(arrow_result, "read_all") and callable(arrow_result.read_all):
-            materialized = arrow_result.read_all()
-            if isinstance(materialized, pa.Table):
-                return materialized
-            return self._ensure_arrow_table(materialized)
-
-        if isinstance(arrow_result, pa.RecordBatch):
-            return pa.Table.from_batches([arrow_result])
-
-        if isinstance(arrow_result, Iterable) and not isinstance(
-            arrow_result, (str, bytes, bytearray)
-        ):
-            batches = list(arrow_result)
-            if batches and all(isinstance(batch, pa.RecordBatch) for batch in batches):
-                return pa.Table.from_batches(batches)
-            if hasattr(arrow_result, "schema") and isinstance(
-                arrow_result.schema, pa.Schema
-            ):
-                raise ValueError(
-                    "Iterable has a schema but does not contain any RecordBatch objects. "
-                    "This may indicate data loss or an unexpected result."
-                )
-
-        raise TypeError(
-            f"Unsupported Arrow result type from DuckDB: {type(arrow_result)!r}"
-        )
-
     def get_statement_schema(self, query: str) -> pa.Schema:
         """Get the schema for a SQL statement without executing it."""
         # Handle non-SELECT statements that don't have a schema
@@ -460,10 +425,10 @@ class DuckDBBackend(DatabaseBackend):
             try:
                 if query_upper.startswith("SELECT "):
                     limited_query = f"SELECT * FROM ({query}) LIMIT 0"
-                    result = self._ensure_arrow_table(
-                        self.connection.execute(limited_query).arrow()
-                    )
+                    result = self.connection.execute(limited_query).arrow()
 
+                    if isinstance(result, pa.Table):
+                        return result.schema
                     return result.schema
                 # For non-SELECT statements, return empty schema
                 return pa.schema([])
@@ -722,9 +687,7 @@ class DuckDBBackend(DatabaseBackend):
         duckdb_log.info(f"get_tables() - Executing query: {query} with params {params}")
 
         try:
-            result_table = self._ensure_arrow_table(
-                self.connection.execute(query, params).arrow()
-            )
+            result_table = self.connection.execute(query, params).arrow()
             duckdb_log.info(
                 f"get_tables() - Query returned {result_table.num_rows} tables"
             )
@@ -772,9 +735,7 @@ class DuckDBBackend(DatabaseBackend):
                             f"Executing schema query for {table_name}: {schema_query}"
                         )
 
-                        schema_result = self._ensure_arrow_table(
-                            self.connection.execute(schema_query).arrow()
-                        )
+                        schema_result = self.connection.execute(schema_query).arrow()
 
                         # Get the schema from the empty result
                         arrow_schema = schema_result.schema
@@ -906,9 +867,7 @@ class DuckDBBackend(DatabaseBackend):
             )
 
             duckdb_log.info(f"Executing get_columns query: {query}")
-            result_table = self._ensure_arrow_table(
-                self.connection.execute(query).arrow()
-            )
+            result_table = self.connection.execute(query).arrow()
             duckdb_log.info(f"get_columns query returned {result_table.num_rows} rows.")
 
             # Ensure the table has the correct schema expected by Flight SQL's GetColumns.
@@ -1106,9 +1065,7 @@ class DuckDBBackend(DatabaseBackend):
             logger.info(f"Executing filtered GetTables query: {base_query}")
 
             # Execute the query
-            result = self._ensure_arrow_table(
-                self.conn.execute(base_query).arrow()
-            )
+            result = self.conn.execute(base_query).arrow()
 
             logger.info(f"GetTables filtered result: {result.num_rows} rows")
 
@@ -1205,13 +1162,9 @@ class DuckDBBackend(DatabaseBackend):
 
             # Execute with parameters
             if params:
-                result = self._ensure_arrow_table(
-                    self.connection.execute(query, params).arrow()
-                )
+                result = self.connection.execute(query, params).arrow()
             else:
-                result = self._ensure_arrow_table(
-                    self.connection.execute(query).arrow()
-                )
+                result = self.connection.execute(query).arrow()
 
             # Log the results to track catalog-schema relationships
             duckdb_log.info(f"get_db_schemas() - Query returned {result.num_rows} rows")
@@ -1597,11 +1550,9 @@ class DuckDBBackend(DatabaseBackend):
             self._ensure_catalog_exists(table_name)
 
             # Query the table to get its schema
-            result = self._ensure_arrow_table(
-                self.connection.execute(
-                    f"SELECT * FROM {table_name} LIMIT 0"
-                ).arrow()
-            )
+            result = self.connection.execute(
+                f"SELECT * FROM {table_name} LIMIT 0"
+            ).arrow()
 
             duckdb_logger.debug(
                 "Successfully retrieved table schema",
