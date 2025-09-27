@@ -777,7 +777,12 @@ class DuckDBBackend(DatabaseBackend):
         duckdb_log.info(f"get_tables() - Executing query: {query} with params {params}")
 
         try:
-            result_table = self.connection.execute(query, params).arrow()
+            result = self.connection.execute(query, params).arrow()
+            # Convert RecordBatchReader to Table if needed
+            if isinstance(result, pa.RecordBatchReader):
+                result_table = result.read_all()
+            else:
+                result_table = result
             duckdb_log.info(
                 f"get_tables() - Query returned {result_table.num_rows} tables"
             )
@@ -826,6 +831,10 @@ class DuckDBBackend(DatabaseBackend):
                         )
 
                         schema_result = self.connection.execute(schema_query).arrow()
+                        
+                        # Convert RecordBatchReader to Table if needed
+                        if isinstance(schema_result, pa.RecordBatchReader):
+                            schema_result = schema_result.read_all()
 
                         # Get the schema from the empty result
                         arrow_schema = schema_result.schema
@@ -957,7 +966,12 @@ class DuckDBBackend(DatabaseBackend):
             )
 
             duckdb_log.info(f"Executing get_columns query: {query}")
-            result_table = self.connection.execute(query).arrow()
+            result = self.connection.execute(query).arrow()
+            # Convert RecordBatchReader to Table if needed
+            if isinstance(result, pa.RecordBatchReader):
+                result_table = result.read_all()
+            else:
+                result_table = result
             duckdb_log.info(f"get_columns query returned {result_table.num_rows} rows.")
 
             # Ensure the table has the correct schema expected by Flight SQL's GetColumns.
@@ -1156,6 +1170,10 @@ class DuckDBBackend(DatabaseBackend):
 
             # Execute the query
             result = self.conn.execute(base_query).arrow()
+            
+            # Convert RecordBatchReader to Table if needed
+            if isinstance(result, pa.RecordBatchReader):
+                result = result.read_all()
 
             logger.info(f"GetTables filtered result: {result.num_rows} rows")
 
@@ -1255,6 +1273,10 @@ class DuckDBBackend(DatabaseBackend):
                 result = self.connection.execute(query, params).arrow()
             else:
                 result = self.connection.execute(query).arrow()
+
+            # Convert RecordBatchReader to Table if needed
+            if isinstance(result, pa.RecordBatchReader):
+                result = result.read_all()
 
             # Log the results to track catalog-schema relationships
             duckdb_log.info(f"get_db_schemas() - Query returned {result.num_rows} rows")
@@ -1643,6 +1665,10 @@ class DuckDBBackend(DatabaseBackend):
             result = self.connection.execute(
                 f"SELECT * FROM {table_name} LIMIT 0"
             ).arrow()
+            
+            # Convert RecordBatchReader to Table if needed
+            if isinstance(result, pa.RecordBatchReader):
+                result = result.read_all()
 
             duckdb_logger.debug(
                 "Successfully retrieved table schema",
