@@ -9,6 +9,7 @@ import logging
 import os
 import secrets
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -16,10 +17,19 @@ import fsspec
 import psycopg2
 import psycopg2.errors
 import typer
-from azure.identity.aio import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential
+from azure.identity.aio import DefaultAzureCredential as DefaultAzureCredentialAsync
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+
+# Import psutil for memory monitoring (optional)
+try:
+    import psutil  # noqa: F401
+
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 from mpzsql import __version__
 from mpzsql.config import ServerConfig
@@ -35,6 +45,527 @@ app = typer.Typer(
 console = Console()
 
 
+class AzureCredentialManager:
+    """
+    Manages Azure credentials for PostgreSQL authentication using DefaultAzureCredential.
+
+    This class provides:
+    - Token caching to avoid repeated credential requests
+    - Automatic token refresh when tokens expire
+    - Proper error handling with fallback to subprocess calls
+    - Thread-safe credential management
+    - DuckDB secret refresh for expired tokens
+    """
+
+    def __init__(self):
+        self._credential = None
+        self._cached_token = None
+        self._token_expires_at = None
+        self._postgresql_scope = "https://ossrdbms-aad.database.windows.net/.default"
+        self._duckdb_connection = None
+        self._server_config = None
+
+    def set_duckdb_connection(self, connection, config):
+        """
+        Set the DuckDB connection and server config for automatic secret refresh.
+
+        Args:
+            connection: DuckDB connection object
+            config: ServerConfig object with PostgreSQL settings
+        """
+        self._duckdb_connection = connection
+        self._server_config = config
+
+    def get_postgresql_token(self, force_refresh: bool = False) -> str:
+        """
+        Get a valid PostgreSQL access token using DefaultAzureCredential.
+
+        Args:
+            force_refresh: If True, bypass cache and get a fresh token
+
+        Returns:
+            str: A valid access token for PostgreSQL
+
+        Raises:
+            Exception: If token acquisition fails
+        """
+        # Check if we have a cached token that's still valid (with 5-minute buffer)
+        now = datetime.now()
+        if (
+            not force_refresh
+            and self._cached_token
+            and self._token_expires_at
+            and self._token_expires_at > now + timedelta(minutes=5)
+        ):
+            return self._cached_token
+
+        # Initialize credential if not already done
+        if not self._credential:
+            console.print(
+                "[blue]🔑 Initializing Azure DefaultAzureCredential...[/blue]"
+            )
+            self._credential = DefaultAzureCredential()
+
+        try:
+            console.print(
+                "[blue]🔑 Getting Azure access token for PostgreSQL...[/blue]"
+            )
+
+            # Get token from DefaultAzureCredential
+            token_result = self._credential.get_token(self._postgresql_scope)
+
+            # Cache the token and its expiration
+            old_token = self._cached_token
+            self._cached_token = token_result.token
+            self._token_expires_at = datetime.fromtimestamp(token_result.expires_on)
+
+            console.print(
+                f"[green]✅ Azure token obtained, expires at {self._token_expires_at}[/green]"
+            )
+
+            # Validate token format
+            if not validate_azure_token_format(self._cached_token):
+                console.print(
+                    "[yellow]⚠️  Token validation warnings detected - connection may fail[/yellow]"
+                )
+
+            # Debug: Log token info (first/last 10 characters for security)
+            if len(self._cached_token) > 20:
+                token_preview = (
+                    f"{self._cached_token[:10]}...{self._cached_token[-10:]}"
+                )
+                console.print(
+                    f"[dim]Token preview: {token_preview} (length: {len(self._cached_token)})[/dim]"
+                )
+
+                # Warn about very long tokens
+                if len(self._cached_token) > 2000:
+                    console.print(
+                        f"[yellow]⚠️  Token is very long ({len(self._cached_token)} chars) - this might cause issues[/yellow]"
+                    )
+
+            # If token changed and we have a DuckDB connection, refresh the secret
+            if (
+                old_token != self._cached_token
+                and self._duckdb_connection
+                and self._server_config
+            ):
+                self._refresh_duckdb_secret()
+
+            return self._cached_token
+
+        except Exception as e:
+            console.print(f"[yellow]⚠️  DefaultAzureCredential failed: {e}[/yellow]")
+            console.print("[yellow]Falling back to az CLI...[/yellow]")
+
+            # Fallback to subprocess call (existing behavior)
+            return self._get_token_via_subprocess()
+
+    def _refresh_duckdb_secret(self):
+        """
+        Refresh the PostgreSQL secret in DuckDB with the new token.
+        """
+        if not self._duckdb_connection or not self._server_config:
+            return
+
+        try:
+            console.print("[blue]🔄 Refreshing PostgreSQL secret in DuckDB...[/blue]")
+
+            # Drop any existing PostgreSQL secrets (both named and anonymous)
+            # Try to drop named secret first, then anonymous
+            try:
+                drop_named_secret_sql = "DROP SECRET IF EXISTS postgres_secret;"
+                self._duckdb_connection.execute(drop_named_secret_sql)
+            except Exception:
+                pass  # Ignore errors for named secret cleanup
+
+            try:
+                drop_anonymous_secret_sql = "DROP SECRET (TYPE postgres);"
+                self._duckdb_connection.execute(drop_anonymous_secret_sql)
+            except Exception:
+                pass  # Ignore errors for anonymous secret cleanup
+
+            # Create the new secret with the fresh token
+            create_secret_sql = create_duckdb_postgresql_secret_sql(
+                host=self._server_config.postgresql_server,
+                port=self._server_config.postgresql_port,
+                database=self._server_config.postgresql_catalogdb,
+                user=self._server_config.postgresql_user,
+                password=self._cached_token,
+            )
+            console.print(
+                f"[dim]Creating DuckDB secret with USER: '{self._server_config.postgresql_user}' (length: {len(self._server_config.postgresql_user)})[/dim]"
+            )
+
+            # Check for potential username truncation issues
+            if len(self._server_config.postgresql_user) > 63:
+                console.print(
+                    f"[yellow]⚠️  Username is very long ({len(self._server_config.postgresql_user)} chars) - some PostgreSQL drivers truncate usernames at 63 characters[/yellow]"
+                )
+
+            try:
+                # Debug: Show the SQL without the password
+                debug_sql = create_duckdb_postgresql_secret_debug_sql(
+                    host=self._server_config.postgresql_server,
+                    port=self._server_config.postgresql_port,
+                    database=self._server_config.postgresql_catalogdb,
+                    user=self._server_config.postgresql_user,
+                )
+                console.print(f"[dim]Secret SQL: {debug_sql.strip()}[/dim]")
+
+                self._duckdb_connection.execute(create_secret_sql).fetchall()
+                console.print("[green]✅ PostgreSQL secret refreshed in DuckDB[/green]")
+            except Exception as e:
+                console.print(
+                    f"[yellow]⚠️  Failed to refresh DuckDB secret: {e}[/yellow]"
+                )
+                console.print(f"[dim]SQL that failed: {debug_sql.strip()}[/dim]")
+                # Try without SSLMODE as fallback
+                try:
+                    console.print(
+                        "[blue]🔄 Retrying without SSLMODE parameter...[/blue]"
+                    )
+                    fallback_sql = create_duckdb_postgresql_secret_sql(
+                        host=self._server_config.postgresql_server,
+                        port=self._server_config.postgresql_port,
+                        database=self._server_config.postgresql_catalogdb,
+                        user=self._server_config.postgresql_user,
+                        password=self._cached_token,
+                    )
+                    self._duckdb_connection.execute(fallback_sql).fetchall()
+                    console.print(
+                        "[green]✅ PostgreSQL secret refreshed in DuckDB (without SSLMODE)[/green]"
+                    )
+                    console.print(
+                        "[yellow]⚠️  SSL may not be enforced - this could cause connection issues with Azure PostgreSQL[/yellow]"
+                    )
+                except Exception as fallback_e:
+                    console.print(f"[red]❌ Fallback also failed: {fallback_e}[/red]")
+                    # Don't raise - this is a background operation
+
+        except Exception as e:
+            console.print(f"[yellow]⚠️  Failed to refresh DuckDB secret: {e}[/yellow]")
+            # Don't raise - this is a background operation
+
+    def _get_token_via_subprocess(self) -> str:
+        """
+        Fallback method to get token using az CLI subprocess call.
+
+        Returns:
+            str: Access token from az CLI
+
+        Raises:
+            Exception: If subprocess call fails
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "az",
+                    "account",
+                    "get-access-token",
+                    "--resource",
+                    "https://ossrdbms-aad.database.windows.net",
+                    "--query",
+                    "accessToken",
+                    "--output",
+                    "tsv",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            token = result.stdout.strip()
+            console.print("[green]✅ Azure token obtained via az CLI[/green]")
+
+            # Validate token format
+            if not validate_azure_token_format(token):
+                console.print(
+                    "[yellow]⚠️  Token validation warnings detected - connection may fail[/yellow]"
+                )
+
+            # Debug: Log token info (first/last 10 characters for security)
+            if len(token) > 20:
+                token_preview = f"{token[:10]}...{token[-10:]}"
+                console.print(
+                    f"[dim]Token preview: {token_preview} (length: {len(token)})[/dim]"
+                )
+
+                # Warn about very long tokens
+                if len(token) > 2000:
+                    console.print(
+                        f"[yellow]⚠️  Token is very long ({len(token)} chars) - this might cause issues[/yellow]"
+                    )
+
+            # Update cache with subprocess token (no expiration info available)
+            old_token = self._cached_token
+            self._cached_token = token
+            self._token_expires_at = None  # Unknown expiration from CLI
+
+            # Refresh DuckDB secret if token changed
+            if (
+                old_token != self._cached_token
+                and self._duckdb_connection
+                and self._server_config
+            ):
+                self._refresh_duckdb_secret()
+
+            return token
+
+        except subprocess.CalledProcessError as e:
+            error_msg = (
+                f"az CLI failed with exit code {e.returncode}: {e.stderr.strip()}"
+            )
+            console.print(f"[red]❌ {error_msg}[/red]")
+            raise Exception(error_msg) from e
+        except FileNotFoundError as e:
+            error_msg = "az CLI not found - please install Azure CLI"
+            console.print(f"[red]❌ {error_msg}[/red]")
+            raise Exception(error_msg) from e
+
+    def invalidate_cache(self):
+        """Invalidate the cached token to force refresh on next request."""
+        self._cached_token = None
+        self._token_expires_at = None
+        console.print("[yellow]🔄 Azure token cache invalidated[/yellow]")
+
+    def schedule_token_refresh(self):
+        """
+        Schedule automatic token refresh before expiration.
+        This could be extended to use background threads or async tasks.
+        """
+        if not self._token_expires_at:
+            return
+
+        # Calculate time until refresh needed (5 minutes before expiration)
+        refresh_time = self._token_expires_at - timedelta(minutes=5)
+        time_until_refresh = refresh_time - datetime.now()
+
+        if time_until_refresh.total_seconds() > 0:
+            console.print(f"[dim]Next token refresh scheduled for {refresh_time}[/dim]")
+
+
+# Global instance of the credential manager
+_azure_credential_manager = AzureCredentialManager()
+
+# DuckDB PostgreSQL Secret Configuration
+# IMPORTANT: These are the ONLY supported parameters for DuckDB PostgreSQL secrets
+DUCKDB_POSTGRESQL_SECRET_SUPPORTED_PARAMETERS = [
+    "TYPE",  # must be 'postgres'
+    "HOST",  # PostgreSQL server hostname
+    "PORT",  # PostgreSQL server port
+    "DATABASE",  # PostgreSQL database name
+    "USER",  # PostgreSQL username
+    "PASSWORD",  # PostgreSQL password
+]
+# DO NOT add SSLMODE, SSLCERT, SSLKEY, or any other parameters - they are not supported!
+
+
+def get_azure_postgresql_token() -> str:
+    """
+    Get a PostgreSQL access token using Azure authentication.
+
+    This function provides a centralized way to get Azure tokens for PostgreSQL
+    across the entire application, with proper caching and error handling.
+
+    Returns:
+        str: A valid PostgreSQL access token
+
+    Raises:
+        Exception: If token acquisition fails
+    """
+    return _azure_credential_manager.get_postgresql_token()
+
+
+def refresh_azure_postgresql_token() -> str:
+    """
+    Force refresh of the PostgreSQL access token, bypassing cache.
+
+    This is useful when you know the token might be expired or invalid.
+
+    Returns:
+        str: A fresh PostgreSQL access token
+
+    Raises:
+        Exception: If token acquisition fails
+    """
+    return _azure_credential_manager.get_postgresql_token(force_refresh=True)
+
+
+def escape_sql_string(value: str) -> str:
+    """
+    Escape a string value for safe use in SQL statements.
+
+    Args:
+        value: The string to escape
+
+    Returns:
+        str: The escaped string safe for SQL insertion
+    """
+    if not value:
+        return ""
+
+    # Escape single quotes by doubling them (SQL standard)
+    # This handles usernames with special characters like @, #, etc.
+    return value.replace("'", "''")
+
+
+def create_duckdb_postgresql_secret_sql(
+    host: str,
+    port: int,
+    database: str,
+    user: str,
+    password: str,
+    secret_name: str = "postgres_secret",
+) -> str:
+    """
+    Create the SQL statement for a DuckDB PostgreSQL secret.
+
+    CRITICAL: DuckDB only supports the parameters listed in DUCKDB_POSTGRESQL_SECRET_SUPPORTED_PARAMETERS.
+
+    Supported parameters:
+    - TYPE: must be 'postgres'
+    - HOST: PostgreSQL server hostname
+    - PORT: PostgreSQL server port
+    - DATABASE: PostgreSQL database name
+    - USER: PostgreSQL username
+    - PASSWORD: PostgreSQL password
+
+    UNSUPPORTED parameters (will cause errors):
+    - SSLMODE, SSLCERT, SSLKEY, SSLROOTCERT, or any other SSL/TLS parameters
+    - Any authentication parameters beyond USER/PASSWORD
+    - Any connection parameters beyond HOST/PORT/DATABASE
+
+    Args:
+        host: PostgreSQL server hostname
+        port: PostgreSQL server port
+        database: PostgreSQL database name
+        user: PostgreSQL username
+        password: PostgreSQL password
+        secret_name: Name for the DuckDB secret (default: postgres_secret)
+
+    Returns:
+        str: Complete CREATE SECRET SQL statement with ONLY the supported parameters
+    """
+    # Use anonymous secret (like the old working version) to ensure DuckLake can find it
+    # Do not escape the password as Azure tokens should not be escaped
+    return f"""CREATE SECRET (
+        TYPE postgres,
+        HOST '{escape_sql_string(host)}',
+        PORT {port},
+        DATABASE '{escape_sql_string(database or "postgres")}',
+        USER '{escape_sql_string(user)}',
+        PASSWORD '{password}'
+    );"""
+
+
+def create_duckdb_postgresql_secret_debug_sql(
+    host: str, port: int, database: str, user: str, secret_name: str = "postgres_secret"
+) -> str:
+    """
+    Create a debug version of the PostgreSQL secret SQL with password redacted.
+
+    Args:
+        host: PostgreSQL server hostname
+        port: PostgreSQL server port
+        database: PostgreSQL database name
+        user: PostgreSQL username
+        secret_name: Name for the DuckDB secret (default: postgres_secret)
+
+    Returns:
+        str: CREATE SECRET SQL statement with password redacted
+    """
+    # Use anonymous secret (like the old working version) to ensure DuckLake can find it
+    return f"""CREATE SECRET (
+        TYPE postgres,
+        HOST '{escape_sql_string(host)}',
+        PORT {port},
+        DATABASE '{escape_sql_string(database or "postgres")}',
+        USER '{escape_sql_string(user)}',
+        PASSWORD '***REDACTED***'
+    );"""
+
+
+def validate_azure_token_format(token: str) -> bool:
+    """
+    Validate that an Azure access token has the expected format.
+
+    Args:
+        token: The access token to validate
+
+    Returns:
+        bool: True if token appears valid, False otherwise
+    """
+    if not token:
+        return False
+
+    # Basic validation - Azure tokens are usually JWT format
+    # They should be base64-encoded strings with dots separating parts
+    parts = token.split(".")
+    if len(parts) != 3:
+        console.print(
+            f"[yellow]⚠️  Token doesn't appear to be JWT format (has {len(parts)} parts, expected 3)[/yellow]"
+        )
+        return False
+
+    # Check for reasonable length (Azure tokens are typically 1000+ characters)
+    if len(token) < 100:
+        console.print(
+            f"[yellow]⚠️  Token seems too short ({len(token)} chars) for Azure token[/yellow]"
+        )
+        return False
+
+    # Check for non-printable characters that might cause issues
+    if not all(32 <= ord(c) <= 126 or c in "\t\n\r" for c in token):
+        console.print(
+            "[yellow]⚠️  Token contains non-printable characters that might cause issues[/yellow]"
+        )
+        return False
+
+    return True
+
+
+def get_memory_info():
+    """Get basic memory information using system commands."""
+    try:
+        if PSUTIL_AVAILABLE:
+            import psutil
+
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            return {
+                "rss_mb": memory_info.rss / 1024 / 1024,
+                "vms_mb": memory_info.vms / 1024 / 1024,
+                "percent": process.memory_percent(),
+            }
+        else:
+            # Fallback to basic info
+            return {"rss_mb": 0, "vms_mb": 0, "percent": 0}
+    except Exception:
+        return {"rss_mb": 0, "vms_mb": 0, "percent": 0}
+
+
+def log_memory_usage(logger, operation: str = ""):
+    """Log current memory usage."""
+    try:
+        memory = get_memory_info()
+        if memory["rss_mb"] > 0:
+            logger.info(
+                f"Memory {operation}: RSS={memory['rss_mb']:.1f}MB, VMS={memory['vms_mb']:.1f}MB, CPU%={memory['percent']:.1f}%"
+            )
+            console.print(
+                f"[dim]Memory {operation}: RSS={memory['rss_mb']:.1f}MB[/dim]"
+            )
+
+            # Warning for high memory usage
+            if memory["rss_mb"] > 1000:
+                console.print(
+                    f"[yellow]⚠️  HIGH MEMORY: {memory['rss_mb']:.1f}MB RSS[/yellow]"
+                )
+                logger.warning(f"High memory usage: {memory['rss_mb']:.1f}MB RSS")
+    except Exception as e:
+        logger.debug(f"Failed to log memory usage: {e}")
+
+
 def validate_postgresql_connection(config: ServerConfig) -> bool:
     """Test PostgreSQL connection using provided configuration."""
     logger = get_main_logger()
@@ -43,8 +574,6 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         return True  # Skip test if not configured
 
     try:
-        import subprocess
-
         import psycopg2
 
         console.print(
@@ -59,36 +588,12 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         # Handle Azure authentication
         password = config.postgresql_password
         if password == "AZURE":
-            console.print("[blue]🔑 Getting Azure access token...[/blue]")
             try:
-                result = subprocess.run(
-                    [
-                        "az",
-                        "account",
-                        "get-access-token",
-                        "--resource",
-                        "https://ossrdbms-aad.database.windows.net",
-                        "--query",
-                        "accessToken",
-                        "--output",
-                        "tsv",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                password = result.stdout.strip()
-                console.print("[green]✅ Azure access token obtained[/green]")
+                password = get_azure_postgresql_token()
                 logger.info("Azure access token obtained for PostgreSQL")
-            except subprocess.CalledProcessError as e:
+            except Exception as e:
                 console.print(f"[red]❌ Failed to get Azure access token: {e}[/red]")
                 logger.error("Failed to get Azure access token", error=str(e))
-                return False
-            except FileNotFoundError:
-                console.print(
-                    "[red]❌ Azure CLI not found. Please install Azure CLI[/red]"
-                )
-                logger.error("Azure CLI not found")
                 return False
 
         # Build connection string
@@ -98,10 +603,21 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
             "user": config.postgresql_user,
             "password": password,
             "connect_timeout": 10,
+            "sslmode": "require",  # Required for Azure Database for PostgreSQL
+            "sslcert": None,  # Client certificate not needed for token auth
+            "sslkey": None,  # Client key not needed for token auth
+            "sslrootcert": None,  # Use system CA store
         }
 
         if config.postgresql_catalogdb:
             conn_params["database"] = config.postgresql_catalogdb
+
+        # Debug: Log connection attempt details (without password)
+        debug_params = {k: v for k, v in conn_params.items() if k != "password"}
+        debug_params["password"] = (
+            "***Azure Token***" if password != config.postgresql_password else "***"
+        )
+        console.print(f"[dim]Connection parameters: {debug_params}[/dim]")
 
         # Test connection
         conn = psycopg2.connect(**conn_params)
@@ -137,6 +653,7 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         logger.error("PostgreSQL connection failed: psycopg2-binary not installed")
         return False
     except Exception as e:
+        error_msg = str(e).lower()
         console.print(f"[red]❌ PostgreSQL connection failed: {e}[/red]")
         console.print(
             f"[dim]   Server: {config.postgresql_server}:{config.postgresql_port}[/dim]"
@@ -144,6 +661,45 @@ def validate_postgresql_connection(config: ServerConfig) -> bool:
         console.print(f"[dim]   User: {config.postgresql_user}[/dim]")
         if config.postgresql_catalogdb:
             console.print(f"[dim]   Database: {config.postgresql_catalogdb}[/dim]")
+
+        # Provide specific guidance for common Azure authentication issues
+        if (
+            "invalid format" in error_msg
+            and password == config.postgresql_password
+            and config.postgresql_password == "AZURE"
+        ):
+            console.print(
+                "\n[yellow]💡 Azure Token Issues - Troubleshooting Steps:[/yellow]"
+            )
+            console.print(
+                "[yellow]   1. Ensure you're logged in with 'az login'[/yellow]"
+            )
+            console.print(
+                "[yellow]   2. Check your Azure account has access to the PostgreSQL server[/yellow]"
+            )
+            console.print(
+                "[yellow]   3. Try refreshing token with 'az account get-access-token --resource https://ossrdbms-aad.database.windows.net'[/yellow]"
+            )
+        elif "no encryption" in error_msg or "ssl" in error_msg:
+            console.print("\n[yellow]💡 SSL/TLS Issues - Check:[/yellow]")
+            console.print(
+                "[yellow]   1. Azure Database for PostgreSQL requires SSL connections[/yellow]"
+            )
+            console.print(
+                "[yellow]   2. Firewall rules might be blocking the connection[/yellow]"
+            )
+        elif "no pg_hba.conf entry" in error_msg:
+            console.print("\n[yellow]💡 Access Control Issues - Check:[/yellow]")
+            console.print(
+                "[yellow]   1. Azure Database firewall rules allow your IP address[/yellow]"
+            )
+            console.print(
+                "[yellow]   2. User exists and has proper permissions[/yellow]"
+            )
+            console.print(
+                "[yellow]   3. Azure AD authentication is properly configured[/yellow]"
+            )
+
         logger.error(
             "PostgreSQL connection failed",
             error=str(e),
@@ -278,24 +834,8 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
         password = config.postgresql_password
         if password == "AZURE":
             try:
-                result = subprocess.run(
-                    [
-                        "az",
-                        "account",
-                        "get-access-token",
-                        "--resource",
-                        "https://ossrdbms-aad.database.windows.net",
-                        "--query",
-                        "accessToken",
-                        "--output",
-                        "tsv",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                password = result.stdout.strip()
-            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                password = get_azure_postgresql_token()
+            except Exception as e:
                 console.print(f"[red]❌ Failed to get Azure access token: {e}[/red]")
                 logger.error(
                     "Failed to get Azure access token for database creation",
@@ -311,7 +851,20 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
             "password": password,
             "database": "postgres",  # Connect to default database
             "connect_timeout": 10,
+            "sslmode": "require",  # Required for Azure Database for PostgreSQL
+            "sslcert": None,  # Client certificate not needed for token auth
+            "sslkey": None,  # Client key not needed for token auth
+            "sslrootcert": None,  # Use system CA store
         }
+
+        # Debug: Log connection attempt details (without password)
+        debug_params = {k: v for k, v in conn_params.items() if k != "password"}
+        debug_params["password"] = (
+            "***Azure Token***" if password != config.postgresql_password else "***"
+        )
+        console.print(
+            f"[dim]Database creation connection parameters: {debug_params}[/dim]"
+        )
 
         conn = psycopg2.connect(**conn_params)
         conn.autocommit = True  # Required for CREATE DATABASE
@@ -363,7 +916,43 @@ def ensure_postgresql_database(config: ServerConfig) -> bool:
         logger.error("Database creation failed: psycopg2-binary not installed")
         return False
     except Exception as e:
+        error_msg = str(e).lower()
         console.print(f"[red]❌ Database creation failed: {e}[/red]")
+
+        # Provide specific guidance for common Azure authentication issues
+        if "invalid format" in error_msg and password != config.postgresql_password:
+            console.print(
+                "\n[yellow]💡 Azure Token Issues - Troubleshooting Steps:[/yellow]"
+            )
+            console.print(
+                "[yellow]   1. Ensure you're logged in with 'az login'[/yellow]"
+            )
+            console.print(
+                "[yellow]   2. Check your Azure account has access to the PostgreSQL server[/yellow]"
+            )
+            console.print(
+                "[yellow]   3. Try refreshing token with 'az account get-access-token --resource https://ossrdbms-aad.database.windows.net'[/yellow]"
+            )
+        elif "no encryption" in error_msg or "ssl" in error_msg:
+            console.print("\n[yellow]💡 SSL/TLS Issues - Check:[/yellow]")
+            console.print(
+                "[yellow]   1. Azure Database for PostgreSQL requires SSL connections[/yellow]"
+            )
+            console.print(
+                "[yellow]   2. Firewall rules might be blocking the connection[/yellow]"
+            )
+        elif "no pg_hba.conf entry" in error_msg:
+            console.print("\n[yellow]💡 Access Control Issues - Check:[/yellow]")
+            console.print(
+                "[yellow]   1. Azure Database firewall rules allow your IP address[/yellow]"
+            )
+            console.print(
+                "[yellow]   2. User exists and has proper permissions[/yellow]"
+            )
+            console.print(
+                "[yellow]   3. Azure AD authentication is properly configured[/yellow]"
+            )
+
         logger.error(
             "Database creation failed",
             error=str(e),
@@ -526,6 +1115,9 @@ def main(
 
     logger.info("MPZSQL Server starting", version=__version__)
 
+    # Log initial memory usage
+    log_memory_usage(logger, "SERVER_START")
+
     # Validate TLS configuration
     tls_cert, tls_key = validate_tls_files(tls_cert, tls_key)
 
@@ -653,24 +1245,41 @@ def main(
     duckdb_con = None
     if config.backend == "duckdb":
         if config.is_azure_storage_enabled:
+            console.print(
+                "[blue]🦆 Initializing DuckDB with Azure integration...[/blue]"
+            )
+            log_memory_usage(logger, "PRE_DUCKDB_AZURE")
             duckdb_con = asyncio.run(initialize_duckdb_with_azure(config))
+            log_memory_usage(logger, "POST_DUCKDB_AZURE")
         else:
+            console.print("[blue]🦆 Initializing DuckDB in basic mode...[/blue]")
+            log_memory_usage(logger, "PRE_DUCKDB_BASIC")
             duckdb_con = initialize_duckdb_basic(config)
+            log_memory_usage(logger, "POST_DUCKDB_BASIC")
 
     # Print startup banner
     print_startup_banner(config)
 
     # Create and start server
     try:
+        console.print("[green]🚀 Starting MPZSQL server...[/green]")
+        log_memory_usage(logger, "PRE_SERVER_START")
+
         server = MPZSQLServer(config, duckdb_con)
+
+        log_memory_usage(logger, "POST_SERVER_INIT")
+        console.print("[green]✅ Server initialized successfully[/green]")
+
         server.start()
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped by user[/yellow]")
+        log_memory_usage(logger, "SERVER_SHUTDOWN")
         if duckdb_con:
             duckdb_con.close()
         raise typer.Exit(0) from None
     except Exception as e:
         console.print(f"[red]Server error:[/red] {e}")
+        log_memory_usage(logger, "SERVER_ERROR")
         if duckdb_con:
             duckdb_con.close()
         raise typer.Exit(1) from e
@@ -728,7 +1337,7 @@ async def initialize_duckdb_with_azure(
 
     try:
         # Setup Azure filesystem
-        async with DefaultAzureCredential() as credential:
+        async with DefaultAzureCredentialAsync() as credential:
             az_fs = await setup_azure_filesystem(
                 config.azure_storage_account, credential
             )
@@ -769,42 +1378,68 @@ async def initialize_duckdb_with_azure(
                     # Handle special case for Azure authentication
                     if config.postgresql_password == "AZURE":
                         console.print("Using Azure authentication for PostgreSQL...")
-                        import subprocess
-
-                        result = subprocess.run(
-                            [
-                                "az",
-                                "account",
-                                "get-access-token",
-                                "--resource",
-                                "https://ossrdbms-aad.database.windows.net",
-                                "--query",
-                                "accessToken",
-                                "--output",
-                                "tsv",
-                            ],
-                            capture_output=True,
-                            text=True,
-                            check=True,
-                        )
-                        pg_password = result.stdout.strip()
+                        pg_password = get_azure_postgresql_token()
                         console.print("✅ Azure access token obtained for PostgreSQL")
+
+                        # Register DuckDB connection with credential manager for automatic refresh
+                        _azure_credential_manager.set_duckdb_connection(con, config)
                     else:
                         pg_password = config.postgresql_password
 
-                    pg_secret_sql = f"""
-                    CREATE SECRET (
-                        TYPE postgres,
-                        HOST '{config.postgresql_server}',
-                        PORT {config.postgresql_port},
-                        DATABASE {config.postgresql_catalogdb or "postgres"},
-                        USER '{config.postgresql_user}',
-                        PASSWORD '{pg_password}'
-                    );
-                    """
-                    result = con.execute(pg_secret_sql).fetchall()
-                    console.print("✅ PostgreSQL secret created successfully")
-                    console.print(f"   Result: {result}")
+                    pg_secret_sql = create_duckdb_postgresql_secret_sql(
+                        host=config.postgresql_server,
+                        port=config.postgresql_port,
+                        database=config.postgresql_catalogdb,
+                        user=config.postgresql_user,
+                        password=pg_password,
+                    )
+
+                    console.print(
+                        f"[dim]Creating DuckDB secret with USER: '{config.postgresql_user}' (length: {len(config.postgresql_user)})[/dim]"
+                    )
+
+                    # Check for potential username truncation issues
+                    if len(config.postgresql_user) > 63:
+                        console.print(
+                            f"[yellow]⚠️  Username is very long ({len(config.postgresql_user)} chars) - some PostgreSQL drivers truncate usernames at 63 characters[/yellow]"
+                        )
+
+                    # Debug: Show the SQL without the password
+                    debug_sql = create_duckdb_postgresql_secret_debug_sql(
+                        host=config.postgresql_server,
+                        port=config.postgresql_port,
+                        database=config.postgresql_catalogdb,
+                        user=config.postgresql_user,
+                    )
+                    console.print(f"[dim]Secret SQL: {debug_sql.strip()}[/dim]")
+
+                    try:
+                        result = con.execute(pg_secret_sql).fetchall()
+                        console.print("✅ PostgreSQL secret created successfully")
+                        console.print(f"   Result: {result}")
+                    except Exception as e:
+                        console.print(
+                            f"[yellow]⚠️  Failed to create PostgreSQL secret with SSLMODE: {e}[/yellow]"
+                        )
+                        # Try without SSLMODE as fallback
+                        console.print(
+                            "[blue]🔄 Retrying without SSLMODE parameter...[/blue]"
+                        )
+                        fallback_sql = create_duckdb_postgresql_secret_sql(
+                            host=config.postgresql_server,
+                            port=config.postgresql_port,
+                            database=config.postgresql_catalogdb,
+                            user=config.postgresql_user,
+                            password=pg_password,
+                        )
+                        result = con.execute(fallback_sql).fetchall()
+                        console.print(
+                            "✅ PostgreSQL secret created successfully (without SSLMODE)"
+                        )
+                        console.print(f"   Result: {result}")
+                        console.print(
+                            "[yellow]⚠️  SSL may not be enforced - this could cause connection issues with Azure PostgreSQL[/yellow]"
+                        )
                 except Exception as e:
                     console.print(f"❌ Failed to create PostgreSQL secret: {e}")
                     raise
@@ -856,13 +1491,13 @@ async def initialize_duckdb_with_azure(
                         "SELECT current_database();"
                     ).fetchall()
                     console.print(f"✅ Current database: {current_db_result[0][0]}")
-                    
+
                     # Verify Azure container access with CSV read test
                     console.print("\n🔍 Verifying Azure container access...")
                     try:
                         csv_uri = f"abfs://{config.azure_storage_account}.dfs.core.windows.net/{config.azure_storage_container}/dummy.csv"
                         console.print(f"   Testing access to: {csv_uri}")
-                        
+
                         verification_sql = f"""
                         SELECT
                             *
@@ -870,25 +1505,35 @@ async def initialize_duckdb_with_azure(
                             '{csv_uri}' AS server
                         LIMIT 5;
                         """
-                        
+
                         result = con.execute(verification_sql).fetchall()
                         console.print("✅ Azure container access verified successfully")
-                        console.print(f"   Retrieved {len(result)} sample rows from dummy.csv")
-                        
+                        console.print(
+                            f"   Retrieved {len(result)} sample rows from dummy.csv"
+                        )
+
                     except Exception as e:
-                        console.print(f"❌ FATAL: Azure container access verification failed: {e}")
+                        console.print(
+                            f"❌ FATAL: Azure container access verification failed: {e}"
+                        )
                         console.print(f"   Could not read from: {csv_uri}")
-                        console.print("   This is a fatal error - DuckLake integration requires Azure access")
-                        console.print("   🛑 SERVER STARTUP ABORTED - Fix Azure configuration and try again")
+                        console.print(
+                            "   This is a fatal error - DuckLake integration requires Azure access"
+                        )
+                        console.print(
+                            "   🛑 SERVER STARTUP ABORTED - Fix Azure configuration and try again"
+                        )
                         # Use a specific exception type to prevent fallback
-                        raise SystemExit(f"FATAL: Azure container verification failed: {e}")
-                        
+                        raise SystemExit(
+                            f"FATAL: Azure container verification failed: {e}"
+                        ) from e
+
                 except Exception as e:
                     console.print(f"❌ Failed to attach ducklake catalog: {e}")
                     # Check if this is our fatal Azure error
                     if "Azure container verification failed" in str(e):
                         # Re-raise as SystemExit to prevent fallback
-                        raise SystemExit(str(e))
+                        raise SystemExit(str(e)) from e
                     else:
                         # Other errors can still fallback
                         raise

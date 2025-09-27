@@ -29,6 +29,7 @@ dependencies = [
     "pandas>=2.3.1",
     "debugpy>=1.8.16",
     "pre-commit>=4.3.0",
+    "psutil>=7.1.0",
 ]
 
 [project.scripts]
