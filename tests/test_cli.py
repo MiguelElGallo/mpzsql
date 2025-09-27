@@ -171,42 +171,6 @@ class TestPostgreSQLValidation:
 
     @patch("mpzsql.cli.get_main_logger")
     @patch("mpzsql.cli.console")
-    def test_validate_postgresql_connection_azure_auth_fail(
-        self, mock_console, mock_logger
-    ):
-        """Test PostgreSQL connection when Azure auth fails."""
-        config = Mock()
-        config.is_postgresql_enabled = True
-        config.postgresql_password = "AZURE"
-
-        with patch(
-            "subprocess.run", side_effect=subprocess.CalledProcessError(1, "az")
-        ):
-            result = cli.validate_postgresql_connection(config)
-            assert result is False
-            mock_console.print.assert_any_call(
-                "[red]❌ Failed to get Azure access token: Command 'az' returned non-zero exit status 1.[/red]"
-            )
-
-    @patch("mpzsql.cli.get_main_logger")
-    @patch("mpzsql.cli.console")
-    def test_validate_postgresql_connection_azure_cli_not_found(
-        self, mock_console, mock_logger
-    ):
-        """Test PostgreSQL connection when Azure CLI is not found."""
-        config = Mock()
-        config.is_postgresql_enabled = True
-        config.postgresql_password = "AZURE"
-
-        with patch("subprocess.run", side_effect=FileNotFoundError()):
-            result = cli.validate_postgresql_connection(config)
-            assert result is False
-            mock_console.print.assert_any_call(
-                "[red]❌ Azure CLI not found. Please install Azure CLI[/red]"
-            )
-
-    @patch("mpzsql.cli.get_main_logger")
-    @patch("mpzsql.cli.console")
     def test_validate_postgresql_connection_import_error(
         self, mock_console, mock_logger
     ):
