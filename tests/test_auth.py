@@ -4,7 +4,7 @@ Tests for mpzsql.auth module providing JWT-based authentication.
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import jwt

@@ -4,7 +4,7 @@ Implements JWT-based authentication similar to the Examples server.
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
@@ -28,13 +28,13 @@ class AuthManager:
     def create_token(self, username: str) -> str:
         """Create a JWT token for the given username."""
         session_id = str(uuid.uuid4())
-        expiry = datetime.utcnow() + timedelta(hours=self.token_expiry_hours)
+        expiry = datetime.now(timezone.utc) + timedelta(hours=self.token_expiry_hours)
 
         payload = {
             "username": username,
             "session_id": session_id,
             "exp": expiry,
-            "iat": datetime.utcnow(),
+            "iat": datetime.now(timezone.utc),
         }
 
         token = jwt.encode(payload, self.secret_key, algorithm="HS256")
@@ -42,8 +42,8 @@ class AuthManager:
         # Store session info
         self.sessions[session_id] = {
             "username": username,
-            "created_at": datetime.utcnow(),
-            "last_activity": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "last_activity": datetime.now(timezone.utc),
             "transactions": [],
         }
 
@@ -65,7 +65,7 @@ class AuthManager:
 
             # Update last activity
             if session_id in self.sessions:
-                self.sessions[session_id]["last_activity"] = datetime.utcnow()
+                self.sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
 
             return payload
         except jwt.ExpiredSignatureError:
@@ -81,7 +81,7 @@ class AuthManager:
 
     def cleanup_expired_sessions(self):
         """Remove expired sessions."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         expired_sessions = []
 
         for session_id, session in self.sessions.items():

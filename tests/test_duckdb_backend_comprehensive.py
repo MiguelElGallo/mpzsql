@@ -18,17 +18,41 @@ from mpzsql.backends.duckdb_backend import DuckDBBackend
 from mpzsql.config import ServerConfig
 
 
+def create_mock_config(**overrides):
+    """Create a properly configured Mock ServerConfig with all required attributes."""
+    config = Mock(spec=ServerConfig)
+    # Set default values for all required attributes
+    config.database = ":memory:"
+    config.read_only = False
+    config.init_sql = None
+    config.print_queries = True
+    # PostgreSQL configuration attributes
+    config.postgresql_server = None
+    config.postgresql_port = 5432
+    config.postgresql_user = None
+    config.postgresql_password = None
+    config.postgresql_catalogdb = None
+    # Azure Storage configuration attributes
+    config.azure_storage_account = None
+    config.azure_storage_container = None
+    # Add property methods that are accessed by the backend
+    config.is_postgresql_enabled = False
+    config.is_azure_storage_enabled = False
+    
+    # Apply any overrides
+    for key, value in overrides.items():
+        setattr(config, key, value)
+    
+    return config
+
+
 class TestDuckDBBackendComprehensive:
     """Comprehensive test suite for DuckDB backend."""
 
     def setup_method(self):
         """Set up test fixtures."""
-        # Create test config for in-memory database
-        self.config = Mock(spec=ServerConfig)
-        self.config.database = ":memory:"
-        self.config.read_only = False
-        self.config.init_sql = None
-        self.config.print_queries = True
+        # Create test config for in-memory database using the helper function
+        self.config = create_mock_config()
 
     def test_init_with_memory_database(self):
         """Test initialization with in-memory database."""
@@ -51,11 +75,7 @@ class TestDuckDBBackendComprehensive:
         os.unlink(db_path)
 
         try:
-            config = Mock(spec=ServerConfig)
-            config.database = db_path
-            config.read_only = False
-            config.init_sql = None
-            config.print_queries = False
+            config = create_mock_config(database=db_path, print_queries=False)
 
             backend = DuckDBBackend(config)
             assert backend.connection is not None
@@ -95,11 +115,7 @@ class TestDuckDBBackendComprehensive:
             conn.close()
 
             # Now test read-only access
-            config = Mock(spec=ServerConfig)
-            config.database = db_path
-            config.read_only = True
-            config.init_sql = None
-            config.print_queries = False
+            config = create_mock_config(database=db_path, read_only=True, print_queries=False)
 
             backend = DuckDBBackend(config)
 

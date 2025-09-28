@@ -18,16 +18,40 @@ from mpzsql.backends.duckdb_backend import DuckDBBackend
 from mpzsql.config import ServerConfig
 
 
+def create_mock_config(**overrides):
+    """Create a properly configured Mock ServerConfig with all required attributes."""
+    config = Mock(spec=ServerConfig)
+    # Set default values for all required attributes
+    config.database = ":memory:"
+    config.read_only = False
+    config.init_sql = None
+    config.print_queries = True
+    # PostgreSQL configuration attributes
+    config.postgresql_server = None
+    config.postgresql_port = 5432
+    config.postgresql_user = None
+    config.postgresql_password = None
+    config.postgresql_catalogdb = None
+    # Azure Storage configuration attributes
+    config.azure_storage_account = None
+    config.azure_storage_container = None
+    # Add property methods that are accessed by the backend
+    config.is_postgresql_enabled = False
+    config.is_azure_storage_enabled = False
+    
+    # Apply any overrides
+    for key, value in overrides.items():
+        setattr(config, key, value)
+    
+    return config
+
+
 class TestDuckDBBackendArrowMethods:
     """Test DuckDB backend Arrow integration methods."""
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.config = Mock(spec=ServerConfig)
-        self.config.database = ":memory:"
-        self.config.read_only = False
-        self.config.init_sql = None
-        self.config.print_queries = True
+        self.config = create_mock_config()
         self.backend = DuckDBBackend(self.config)
 
     def teardown_method(self):

@@ -3,7 +3,7 @@ Tests for transaction management module.
 Tests for mpzsql.transaction module providing transaction handling.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import pytest
@@ -171,7 +171,7 @@ class TestTransaction:
 
     def test_created_at_timestamp(self):
         """Test that created_at timestamp is recent."""
-        creation_time = datetime.utcnow()
+        creation_time = datetime.now(timezone.utc)
         transaction = Transaction("txn_test", "session_test", Mock())
 
         # Should be created within last few seconds
@@ -348,7 +348,7 @@ class TestTransactionManager:
         )
 
         # Manually set transaction creation time to be old
-        old_time = datetime.utcnow() - timedelta(hours=2)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
         self.manager.transactions[transaction_id].created_at = old_time
 
         # Clean up with 1 hour timeout

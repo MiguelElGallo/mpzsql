@@ -4,7 +4,7 @@ Implements transaction handling similar to the Examples server.
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -30,12 +30,14 @@ class Transaction:
         self.session_id = session_id
         self.connection = connection
         self.state = TransactionState.ACTIVE
-        self.created_at = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
         self.statements = []
 
     def add_statement(self, statement: str):
         """Add a statement to the transaction log."""
-        self.statements.append({"statement": statement, "timestamp": datetime.utcnow()})
+        self.statements.append(
+            {"statement": statement, "timestamp": datetime.now(timezone.utc)}
+        )
 
     def commit(self):
         """Commit the transaction."""
@@ -115,7 +117,7 @@ class TransactionManager:
 
     def cleanup_abandoned_transactions(self, timeout_minutes: int = 30):
         """Clean up transactions that have been abandoned."""
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         abandoned = []
 
         for txn_id, transaction in self.transactions.items():
