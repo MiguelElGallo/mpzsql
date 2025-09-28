@@ -52,6 +52,9 @@ class DuckDBBackend(DatabaseBackend):
         """Initialize DuckDB backend."""
         super().__init__(config)
 
+        # Store config for token validation access
+        self.config = config
+
         # Use existing connection if provided, otherwise create new one
         if existing_connection:
             self.connection = existing_connection
@@ -119,6 +122,128 @@ class DuckDBBackend(DatabaseBackend):
         except Exception as e:
             logger.debug(f"DuckDB setup completed with some warnings: {e}")
 
+    def _needs_azure_token_refresh(self) -> bool:
+        """
+        Check if this DuckLake server needs Azure token refresh.
+        This is determined at boot time based on:
+        1. config.is_postgresql_enabled (PostgreSQL + Azure Storage configured)
+        2. config.postgresql_password == "AZURE" (Azure token authentication mode)
+        """
+        return (
+            self.config.is_postgresql_enabled
+            and self.config.postgresql_password == "AZURE"
+        )
+
+    def _is_token_expiry_error(self, error_msg: str) -> bool:
+        """Check if error indicates token expiration."""
+        token_expiry_indicators = [
+            "access token has expired",
+            "FATAL:  The access token has expired",
+            "Acquire a new token and try again",
+        ]
+        return any(
+            indicator.lower() in error_msg.lower()
+            for indicator in token_expiry_indicators
+        )
+
+    def _refresh_duckdb_anonymous_secret(self) -> None:
+        """Refresh the DuckDB anonymous PostgreSQL secret with fresh token."""
+        try:
+            logger.info("Refreshing DuckDB anonymous PostgreSQL secret")
+
+            # Drop existing anonymous PostgreSQL secret
+            try:
+                drop_sql = "DROP SECRET (TYPE postgres);"
+                self.connection.execute(drop_sql)
+                logger.debug("Dropped existing anonymous PostgreSQL secret")
+            except Exception:
+                logger.debug("No existing anonymous PostgreSQL secret to drop")
+                pass  # Ignore if secret doesn't exist
+
+            # Import needed functions from cli module
+            from mpzsql.cli import (
+                _azure_credential_manager,
+                create_duckdb_postgresql_secret_sql,
+            )
+
+            # Create new anonymous secret with fresh token
+            create_sql = create_duckdb_postgresql_secret_sql(
+                host=self.config.postgresql_server,
+                port=self.config.postgresql_port,
+                database=self.config.postgresql_catalogdb,
+                user=self.config.postgresql_user,
+                password=_azure_credential_manager._cached_token,
+            )
+
+            self.connection.execute(create_sql).fetchall()
+            logger.info("DuckDB anonymous PostgreSQL secret refreshed successfully")
+            duckdb_logger.info(
+                "Refreshed DuckDB PostgreSQL secret with fresh Azure token"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to refresh DuckDB anonymous secret: {e}")
+            duckdb_logger.error("Failed to refresh PostgreSQL secret", error=str(e))
+            raise
+
+    def _ensure_fresh_postgresql_token(self) -> None:
+        """Ensure PostgreSQL token is fresh before query execution."""
+        from mpzsql.cli import _azure_credential_manager
+
+        # Only check if using Azure authentication
+        if not self._needs_azure_token_refresh():
+            return
+
+        try:
+            logger.debug("Checking PostgreSQL token freshness")
+
+            # Check if token needs refresh (existing logic with 5-minute buffer)
+            old_token = _azure_credential_manager._cached_token
+            _azure_credential_manager.get_postgresql_token()  # Uses existing refresh logic
+
+            # If token changed, update DuckDB anonymous secret
+            if old_token != _azure_credential_manager._cached_token:
+                logger.info("Token refreshed, updating DuckDB anonymous secret")
+                self._refresh_duckdb_anonymous_secret()
+            else:
+                logger.debug("Token still valid, no refresh needed")
+
+        except Exception as e:
+            logger.warning(f"Failed to ensure fresh PostgreSQL token: {e}")
+            duckdb_logger.warning("Token validation failed", error=str(e))
+            # Don't fail the query - let DuckDB try with existing token
+
+    def _retry_with_fresh_token(
+        self, query: str, params: list[str] | None = None
+    ) -> pa.Table:
+        """Retry query execution after refreshing the PostgreSQL token."""
+        from mpzsql.cli import _azure_credential_manager
+
+        logger.info(
+            "Detected token expiry error, attempting to refresh token and retry"
+        )
+        duckdb_logger.info("Retrying query after token expiry", query=query[:100])
+
+        try:
+            # Force refresh the token
+            _azure_credential_manager.get_postgresql_token(force_refresh=True)
+            self._refresh_duckdb_anonymous_secret()
+
+            logger.info("Token refreshed, retrying query execution")
+
+            # Retry the query
+            result = self.connection.execute(query, params).fetch_arrow_table()
+            logger.info("Query retry successful after token refresh")
+            duckdb_logger.info("Query retry successful", rows=len(result))
+            return result
+
+        except Exception as retry_error:
+            logger.error(f"Query retry failed even after token refresh: {retry_error}")
+            duckdb_logger.error(
+                "Query retry failed after token refresh", error=str(retry_error)
+            )
+            raise
+
     def execute_sql(self, sql: str) -> None:
         """Execute SQL commands without returning results."""
         try:
@@ -128,9 +253,14 @@ class DuckDBBackend(DatabaseBackend):
             logger.error(f"SQL execution failed: {e}")
             raise
 
-    def execute_query(self, query: str, params: list | None = None) -> pa.Table:
+    def execute_query(self, query: str, params: list[str] | None = None) -> pa.Table:
         """Execute a SQL query using DuckDB and return the results as a PyArrow Table."""
         try:
+            # Check token validity if this server requires Azure PostgreSQL tokens
+            # (determined at boot time based on config.is_postgresql_enabled + config.postgresql_password == "AZURE")
+            if self._needs_azure_token_refresh():
+                self._ensure_fresh_postgresql_token()
+
             duckdb_log.info(f"Executing query: {query}")
             duckdb_logger.info("Executing DuckDB query", query=query)
             if params:
@@ -147,6 +277,10 @@ class DuckDBBackend(DatabaseBackend):
             fh.flush()  # Force flush after execution
             return result
         except Exception as e:
+            # Check if error is due to expired token and attempt recovery
+            if self._is_token_expiry_error(str(e)):
+                return self._retry_with_fresh_token(query, params)
+
             duckdb_log.error(f"Error executing query: {query}\n{e}")
             duckdb_logger.error("Query execution failed", query=query, error=str(e))
             fh.flush()  # Force flush on error
@@ -831,7 +965,7 @@ class DuckDBBackend(DatabaseBackend):
                         )
 
                         schema_result = self.connection.execute(schema_query).arrow()
-                        
+
                         # Convert RecordBatchReader to Table if needed
                         if isinstance(schema_result, pa.RecordBatchReader):
                             schema_result = schema_result.read_all()
@@ -1170,7 +1304,7 @@ class DuckDBBackend(DatabaseBackend):
 
             # Execute the query
             result = self.conn.execute(base_query).arrow()
-            
+
             # Convert RecordBatchReader to Table if needed
             if isinstance(result, pa.RecordBatchReader):
                 result = result.read_all()
@@ -1665,7 +1799,7 @@ class DuckDBBackend(DatabaseBackend):
             result = self.connection.execute(
                 f"SELECT * FROM {table_name} LIMIT 0"
             ).arrow()
-            
+
             # Convert RecordBatchReader to Table if needed
             if isinstance(result, pa.RecordBatchReader):
                 result = result.read_all()
