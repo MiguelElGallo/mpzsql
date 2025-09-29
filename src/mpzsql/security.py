@@ -8,15 +8,13 @@ import base64
 import logging
 import ssl
 from pathlib import Path
+from typing import Any, Dict
 
 import jwt
 import pyarrow.flight as pf
 from cryptography.hazmat.primitives import hashes
 
-try:
-    from mpzsql.config import ServerConfig
-except ImportError:
-    from config import ServerConfig
+from mpzsql.config import ServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +137,7 @@ def setup_tls_context(
         raise
 
 
-class FlightAuthHandler(pf.ServerAuthHandler):
+class FlightAuthHandler(pf.ServerAuthHandler):  # type: ignore[misc]
     """Flight authentication handler."""
 
     def __init__(self, auth_middleware: AuthMiddleware):
@@ -147,7 +145,7 @@ class FlightAuthHandler(pf.ServerAuthHandler):
         super().__init__()
         self.auth_middleware = auth_middleware
 
-    def authenticate(self, outgoing, incoming):
+    def authenticate(self, outgoing: Any, incoming: Any) -> None:
         """Authenticate client during the Flight handshake."""
         try:
             auth_bytes = incoming.read()
@@ -167,7 +165,7 @@ class FlightAuthHandler(pf.ServerAuthHandler):
         outgoing.write(token.encode())
         logger.info(f"Authentication successful for user: {username}")
 
-    def is_valid(self, token):
+    def is_valid(self, token: str) -> str:
         """Validate token for subsequent requests.
 
         Parameters
@@ -198,46 +196,46 @@ class FlightAuthHandler(pf.ServerAuthHandler):
             )
 
             username = payload.get("username")
-            if username != self.auth_middleware.username:
+            if not username or username != self.auth_middleware.username:
                 raise pf.FlightUnauthenticatedError("Invalid token user")
 
-            return username
+            return str(username)
 
         except Exception as e:
             logger.warning(f"Token validation failed: {e}")
             raise pf.FlightUnauthenticatedError("Invalid token") from e
 
 
-class NoOpAuthHandler(pf.ServerAuthHandler):
+class NoOpAuthHandler(pf.ServerAuthHandler):  # type: ignore[misc]
     """A no-op authentication handler used when only middleware handles auth."""
 
-    def authenticate(self, outgoing, incoming):
+    def authenticate(self, outgoing: Any, incoming: Any) -> None:
         """Perform no authentication on handshake."""
         return
 
-    def is_valid(self, token):
+    def is_valid(self, token: str) -> str:
         """Always return an empty identity string."""
         return ""
 
 
-class HeaderAuthServerMiddleware(pf.ServerMiddleware):
+class HeaderAuthServerMiddleware(pf.ServerMiddleware):  # type: ignore[misc]
     """Middleware that returns a bearer token when Basic auth succeeds."""
 
     def __init__(self, username: str, secret_key: str):
         self.username = username
         self.secret_key = secret_key
 
-    def sending_headers(self):
+    def sending_headers(self) -> Dict[str, str]:
         token = jwt.encode(
             {"username": self.username}, self.secret_key, algorithm="HS256"
         )
         return {"authorization": f"Bearer {token}"}
 
-    def call_completed(self, status):
+    def call_completed(self, status: Any) -> None:
         pass
 
 
-class HeaderAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
+class HeaderAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):  # type: ignore[misc]
     """Factory that authenticates Basic auth headers."""
 
     def __init__(self, username: str, password: str, secret_key: str):
@@ -245,7 +243,7 @@ class HeaderAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
         self.password = password
         self.secret_key = secret_key
 
-    def start_call(self, info, headers):
+    def start_call(self, info: Any, headers: Any) -> Any:
         auth_vals = headers.get("authorization")
         logger.debug(f"HeaderAuthMiddleware: auth headers = {headers}")
         if not auth_vals:
@@ -284,13 +282,13 @@ class HeaderAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
         raise pf.FlightUnauthenticatedError("Invalid credentials")
 
 
-class BearerAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):
+class BearerAuthServerMiddlewareFactory(pf.ServerMiddlewareFactory):  # type: ignore[misc]
     """Factory that validates Bearer tokens on each call."""
 
     def __init__(self, secret_key: str):
         self.secret_key = secret_key
 
-    def start_call(self, info, headers):
+    def start_call(self, info: Any, headers: Any) -> None:
         auth_vals = headers.get("authorization")
         if not auth_vals:
             return
@@ -483,7 +481,7 @@ class TLSCertificateLoader:
         verify_client = False
 
         # Load TLS certificates if configured
-        if config.is_tls_enabled:
+        if config.is_tls_enabled and config.tls_cert and config.tls_key:
             tls_certificates = TLSCertificateLoader.load_tls_certificates(
                 config.tls_cert, config.tls_key
             )
@@ -492,7 +490,7 @@ class TLSCertificateLoader:
             logger.warning("TLS disabled - connections are not encrypted")
 
         # Load mTLS CA certificate if configured
-        if config.is_mtls_enabled:
+        if config.is_mtls_enabled and config.mtls_ca:
             if not config.is_tls_enabled:
                 raise ValueError("mTLS requires TLS to be enabled")
 

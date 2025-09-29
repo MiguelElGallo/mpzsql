@@ -85,7 +85,7 @@ def location():
 class TestSqlInfoConstants:
     """Test SqlInfo constant definitions."""
 
-    def test_sql_info_constants_exist(self):
+    def test_sql_info_constants_exist(self) -> None:
         """Test that all required SqlInfo constants are defined."""
         assert hasattr(SqlInfo, "FLIGHT_SQL_SERVER_NAME")
         assert hasattr(SqlInfo, "FLIGHT_SQL_SERVER_VERSION")
@@ -96,7 +96,7 @@ class TestSqlInfoConstants:
         assert hasattr(SqlInfo, "FLIGHT_SQL_SERVER_TRANSACTION")
         assert hasattr(SqlInfo, "FLIGHT_SQL_SERVER_CANCEL")
 
-    def test_sql_info_values(self):
+    def test_sql_info_values(self) -> None:
         """Test that SqlInfo constants have correct values."""
         assert SqlInfo.FLIGHT_SQL_SERVER_NAME == 0
         assert SqlInfo.FLIGHT_SQL_SERVER_VERSION == 1
@@ -106,7 +106,7 @@ class TestSqlInfoConstants:
         assert SqlInfo.SQL_DDL_SCHEMA == 501
         assert SqlInfo.SQL_DDL_TABLE == 502
 
-    def test_additional_sql_constants(self):
+    def test_additional_sql_constants(self) -> None:
         """Test additional SQL constant classes."""
         # Test SqlSupportedTransaction constants
         assert hasattr(SqlSupportedTransaction, "SQL_SUPPORTED_TRANSACTION_NONE")

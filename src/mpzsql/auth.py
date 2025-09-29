@@ -12,7 +12,7 @@ import jwt
 from mpzsql.logfire_config import get_auth_logger
 
 logger = logging.getLogger(__name__)
-auth_logger = get_auth_logger()
+auth_logger = get_auth_logger()  # type: ignore
 
 
 class AuthManager:
@@ -61,13 +61,15 @@ class AuthManager:
                 token = token[7:]
 
             payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
-            session_id = payload.get("session_id")
+            # Cast payload since jwt.decode returns Any but should be dict
+            payload_dict: dict[str, Any] = dict(payload)
+            session_id = payload_dict.get("session_id")
 
             # Update last activity
             if session_id in self.sessions:
                 self.sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
 
-            return payload
+            return payload_dict
         except jwt.ExpiredSignatureError:
             logger.warning("Token has expired")
             return None
@@ -79,7 +81,7 @@ class AuthManager:
         """Get session information by session ID."""
         return self.sessions.get(session_id)
 
-    def cleanup_expired_sessions(self):
+    def cleanup_expired_sessions(self) -> None:
         """Remove expired sessions."""
         current_time = datetime.now(timezone.utc)
         expired_sessions = []

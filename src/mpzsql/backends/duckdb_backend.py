@@ -166,6 +166,18 @@ class DuckDBBackend(DatabaseBackend):
                 create_duckdb_postgresql_secret_sql,
             )
 
+            # Validate required PostgreSQL parameters
+            if self.config.postgresql_server is None:
+                raise ValueError("PostgreSQL server is required but not provided")
+            if self.config.postgresql_port is None:
+                raise ValueError("PostgreSQL port is required but not provided")
+            if self.config.postgresql_catalogdb is None:
+                raise ValueError(
+                    "PostgreSQL catalog database is required but not provided"
+                )
+            if self.config.postgresql_user is None:
+                raise ValueError("PostgreSQL user is required but not provided")
+
             # Create new anonymous secret with fresh token
             create_sql = create_duckdb_postgresql_secret_sql(
                 host=self.config.postgresql_server,
@@ -927,11 +939,25 @@ class DuckDBBackend(DatabaseBackend):
                 schemas = result_table.column("db_schema_name").to_pylist()
                 tables = result_table.column("table_name").to_pylist()
                 table_types = result_table.column("table_type").to_pylist()
-                duckdb_log.info("get_tables() - Catalog-Schema-Table relationships:")
-                for i, (cat, schema, table, ttype) in enumerate(
-                    zip(catalogs, schemas, tables, table_types, strict=False)
+
+                # Ensure all columns are not None before zipping
+                if (
+                    catalogs is not None
+                    and schemas is not None
+                    and tables is not None
+                    and table_types is not None
                 ):
-                    duckdb_log.info(f"  {i + 1}. {cat}.{schema}.{table} ({ttype})")
+                    duckdb_log.info(
+                        "get_tables() - Catalog-Schema-Table relationships:"
+                    )
+                    for i, (cat, schema, table, ttype) in enumerate(
+                        zip(catalogs, schemas, tables, table_types, strict=False)
+                    ):
+                        duckdb_log.info(f"  {i + 1}. {cat}.{schema}.{table} ({ttype})")
+                else:
+                    duckdb_log.warning(
+                        "get_tables() - Some table metadata columns are None"
+                    )
             else:
                 duckdb_log.warning("get_tables() - No tables found!")
 
@@ -986,7 +1012,17 @@ class DuckDBBackend(DatabaseBackend):
                         with ipc.new_stream(buffer, arrow_schema) as _:
                             pass  # Just creating the stream writes the schema
                         schema_bytes = buffer.getvalue()
-                        table_schemas_bytes.append(schema_bytes)
+
+                        # Ensure schema_bytes is not None before appending
+                        if schema_bytes is not None:
+                            table_schemas_bytes.append(schema_bytes)
+                        else:
+                            duckdb_log.warning(
+                                f"Schema bytes is None for table {table_name}"
+                            )
+                            table_schemas_bytes.append(
+                                b""
+                            )  # Use empty bytes instead of None
 
                         duckdb_log.info(
                             f"Successfully serialized schema for table {table_name} ({len(schema_bytes)} bytes)"
@@ -995,7 +1031,9 @@ class DuckDBBackend(DatabaseBackend):
                         duckdb_log.error(
                             f"Failed to get schema for table {table_name}: {e}"
                         )
-                        table_schemas_bytes.append(None)
+                        table_schemas_bytes.append(
+                            b""
+                        )  # Use empty bytes instead of None
 
                 duckdb_log.info(f"Collected {len(table_schemas_bytes)} table schemas")
 
@@ -1303,7 +1341,7 @@ class DuckDBBackend(DatabaseBackend):
             logger.info(f"Executing filtered GetTables query: {base_query}")
 
             # Execute the query
-            result = self.conn.execute(base_query).arrow()
+            result = self.connection.execute(base_query).arrow()
 
             # Convert RecordBatchReader to Table if needed
             if isinstance(result, pa.RecordBatchReader):

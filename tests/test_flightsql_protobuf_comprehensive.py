@@ -34,7 +34,7 @@ from mpzsql.flightsql.protobuf import (
 class TestFlightSQLProtobufComprehensive:
     """Comprehensive test suite for FlightSQL protobuf handling."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.protobuf = FlightSQLProtobuf()
 
@@ -42,7 +42,7 @@ class TestFlightSQLProtobufComprehensive:
     # Schema Generation Tests
     # ===============================
 
-    def test_get_sql_info_schema_complete(self):
+    def test_get_sql_info_schema_complete(self) -> None:
         """Test complete SQL info schema generation."""
         schema = self.protobuf.get_sql_info_schema()
 
@@ -61,7 +61,7 @@ class TestFlightSQLProtobufComprehensive:
         table = pa.Table.from_arrays(test_data, schema=schema)
         assert len(table) == 2
 
-    def test_get_sql_info_schema_with_dense_union(self):
+    def test_get_sql_info_schema_with_dense_union(self) -> None:
         """Test SQL info schema with dense union for complex types."""
         schema = self.protobuf.get_sql_info_schema_with_dense_union()
 
@@ -75,7 +75,7 @@ class TestFlightSQLProtobufComprehensive:
         value_type = schema.field(1).type
         assert pa.types.is_union(value_type)
 
-    def test_get_catalogs_schema(self):
+    def test_get_catalogs_schema(self) -> None:
         """Test catalogs schema generation."""
         schema = self.protobuf.get_catalogs_schema()
 
@@ -84,7 +84,7 @@ class TestFlightSQLProtobufComprehensive:
         assert schema.field(0).name == "catalog_name"
         assert schema.field(0).type == pa.string()
 
-    def test_get_db_schemas_schema(self):
+    def test_get_db_schemas_schema(self) -> None:
         """Test DB schemas schema generation."""
         schema = self.protobuf.get_db_schemas_schema()
 
@@ -95,7 +95,7 @@ class TestFlightSQLProtobufComprehensive:
         assert schema.field(1).name == "db_schema_name"
         assert schema.field(1).type == pa.string()
 
-    def test_get_tables_schema_minimal(self):
+    def test_get_tables_schema_minimal(self) -> None:
         """Test minimal tables schema."""
         schema = self.protobuf.get_tables_schema_minimal()
 
@@ -106,7 +106,7 @@ class TestFlightSQLProtobufComprehensive:
             assert schema.field(i).name == field_name
             assert schema.field(i).type == pa.string()
 
-    def test_get_tables_schema_with_included_schema(self):
+    def test_get_tables_schema_with_included_schema(self) -> None:
         """Test tables schema with included schema information."""
         schema = self.protobuf.get_tables_schema_with_included_schema()
 
@@ -125,7 +125,7 @@ class TestFlightSQLProtobufComprehensive:
             assert schema.field(i).name == field_name
             assert schema.field(i).type == field_type
 
-    def test_get_columns_schema(self):
+    def test_get_columns_schema(self) -> None:
         """Test columns schema generation."""
         schema = self.protobuf.get_columns_schema()
 
@@ -143,7 +143,7 @@ class TestFlightSQLProtobufComprehensive:
         assert "data_type" in field_names
         assert "ordinal_position" in field_names
 
-    def test_get_table_types_schema(self):
+    def test_get_table_types_schema(self) -> None:
         """Test table types schema generation."""
         schema = self.protobuf.get_table_types_schema()
 
@@ -152,7 +152,7 @@ class TestFlightSQLProtobufComprehensive:
         assert schema.field(0).name == "table_type"
         assert schema.field(0).type == pa.string()
 
-    def test_get_primary_keys_schema(self):
+    def test_get_primary_keys_schema(self) -> None:
         """Test primary keys schema generation."""
         schema = self.protobuf.get_primary_keys_schema()
 
@@ -174,7 +174,7 @@ class TestFlightSQLProtobufComprehensive:
     # Command Parsing Tests
     # ===============================
 
-    def test_parse_command_statement_query_simple(self):
+    def test_parse_command_statement_query_simple(self) -> None:
         """Test parsing simple SQL query command."""
         # Create simple test SQL
         sql = "SELECT * FROM users"
@@ -183,7 +183,7 @@ class TestFlightSQLProtobufComprehensive:
         result = self.protobuf.parse_command_statement_query(test_bytes)
         assert result == sql
 
-    def test_parse_command_statement_query_with_prefix(self):
+    def test_parse_command_statement_query_with_prefix(self) -> None:
         """Test parsing SQL query command with length prefix."""
         sql = "SELECT id, name FROM products WHERE price > 100"
         sql_bytes = sql.encode("utf-8")
@@ -197,7 +197,7 @@ class TestFlightSQLProtobufComprehensive:
         assert result is not None
         assert sql in result or result in sql or len(result) > 10
 
-    def test_parse_command_statement_query_invalid(self):
+    def test_parse_command_statement_query_invalid(self) -> None:
         """Test parsing invalid SQL query command."""
         # Pure binary data that's not valid UTF-8
         test_bytes = b"\x00\x01\x02\x03\xff\xfe"
@@ -205,7 +205,7 @@ class TestFlightSQLProtobufComprehensive:
         result = self.protobuf.parse_command_statement_query(test_bytes)
         assert result is None
 
-    def test_parse_command_statement_update_simple(self):
+    def test_parse_command_statement_update_simple(self) -> None:
         """Test parsing simple SQL update command."""
         sql = "UPDATE users SET name = 'John' WHERE id = 1"
         test_bytes = sql.encode("utf-8")
@@ -213,7 +213,7 @@ class TestFlightSQLProtobufComprehensive:
         result = self.protobuf.parse_command_statement_update(test_bytes)
         assert result == sql
 
-    def test_parse_command_statement_update_with_prefix(self):
+    def test_parse_command_statement_update_with_prefix(self) -> None:
         """Test parsing SQL update command with protobuf structure."""
         sql = (
             "INSERT INTO orders (user_id, product, price) VALUES (1, 'Laptop', 999.99)"
@@ -229,7 +229,7 @@ class TestFlightSQLProtobufComprehensive:
         assert result is not None
         assert sql in result or result in sql or len(result) > 10
 
-    def test_parse_command_get_tables_simple(self):
+    def test_parse_command_get_tables_simple(self) -> None:
         """Test parsing GetTables command with basic parameters."""
         # Simple test - method should exist and handle empty bytes
         result = self.protobuf.parse_command_get_tables(b"")
@@ -242,7 +242,7 @@ class TestFlightSQLProtobufComprehensive:
         assert table_types == []
         assert not include_schema
 
-    def test_parse_command_get_tables_with_filters(self):
+    def test_parse_command_get_tables_with_filters(self) -> None:
         """Test parsing GetTables command with protobuf-encoded filters."""
         # This is a complex test that would require creating actual protobuf bytes
         # For now, test that the method exists and can handle basic cases
@@ -263,7 +263,7 @@ class TestFlightSQLProtobufComprehensive:
         assert isinstance(table_types, list)
         assert isinstance(include_schema, bool)
 
-    def test_parse_command_prepared_statement_query(self):
+    def test_parse_command_prepared_statement_query(self) -> None:
         """Test parsing prepared statement query command."""
         # Test basic functionality
         test_bytes = b"stmt_12345"
@@ -272,7 +272,7 @@ class TestFlightSQLProtobufComprehensive:
         # Method should exist and handle the input
         assert result is None or isinstance(result, str)
 
-    def test_parse_command_update(self):
+    def test_parse_command_update(self) -> None:
         """Test parsing update command (prepared statement handle)."""
         handle = "stmt_abcdef123456"
         test_bytes = handle.encode("utf-8")
@@ -286,7 +286,7 @@ class TestFlightSQLProtobufComprehensive:
     # Prepared Statement Tests
     # ===============================
 
-    def test_create_prepared_statement_handle(self):
+    def test_create_prepared_statement_handle(self) -> None:
         """Test creating prepared statement handles."""
         handle1 = self.protobuf.create_prepared_statement_handle()
         handle2 = self.protobuf.create_prepared_statement_handle()
@@ -297,7 +297,7 @@ class TestFlightSQLProtobufComprehensive:
         assert len(handle1) > 5  # Should be reasonable length
         assert handle1.startswith("stmt_")
 
-    def test_encode_prepared_statement_handle(self):
+    def test_encode_prepared_statement_handle(self) -> None:
         """Test encoding prepared statement handles."""
         handle = "stmt_test_123"
         encoded = self.protobuf.encode_prepared_statement_handle(handle)
@@ -305,7 +305,7 @@ class TestFlightSQLProtobufComprehensive:
         assert isinstance(encoded, bytes)
         assert len(encoded) > 0
 
-    def test_parse_create_prepared_statement_request(self):
+    def test_parse_create_prepared_statement_request(self) -> None:
         """Test parsing create prepared statement requests."""
         sql = "SELECT * FROM users WHERE id = ?"
         test_bytes = sql.encode("utf-8")
@@ -315,7 +315,7 @@ class TestFlightSQLProtobufComprehensive:
         # Should return the SQL or None
         assert result is None or result == sql
 
-    def test_parse_close_prepared_statement_request(self):
+    def test_parse_close_prepared_statement_request(self) -> None:
         """Test parsing close prepared statement requests."""
         handle = "stmt_close_test"
         test_bytes = handle.encode("utf-8")
@@ -329,7 +329,7 @@ class TestFlightSQLProtobufComprehensive:
     # Type Mapping Tests
     # ===============================
 
-    def test_get_type_mapping(self):
+    def test_get_type_mapping(self) -> None:
         """Test SQL type mapping functionality."""
         type_mapping = self.protobuf.get_type_mapping()
 
@@ -341,7 +341,7 @@ class TestFlightSQLProtobufComprehensive:
         for sql_type in common_types:
             assert sql_type in type_mapping
 
-    def test_map_sql_type_to_arrow(self):
+    def test_map_sql_type_to_arrow(self) -> None:
         """Test mapping SQL types to Arrow types."""
         type_mapping = self.protobuf.get_type_mapping()
 
@@ -359,7 +359,7 @@ class TestFlightSQLProtobufComprehensive:
     # Action Creation Tests
     # ===============================
 
-    def test_create_action_begin_transaction_result(self):
+    def test_create_action_begin_transaction_result(self) -> None:
         """Test creating begin transaction action results."""
         transaction_id = "tx_12345"
         result = self.protobuf.create_action_begin_transaction_result(transaction_id)
@@ -367,7 +367,7 @@ class TestFlightSQLProtobufComprehensive:
         assert isinstance(result, bytes)
         assert len(result) > 0
 
-    def test_create_action_create_prepared_statement_result(self):
+    def test_create_action_create_prepared_statement_result(self) -> None:
         """Test creating prepared statement action results."""
         handle = "stmt_67890"
         dataset_schema = pa.schema([("col1", pa.int32()), ("col2", pa.string())])
@@ -385,12 +385,12 @@ class TestFlightSQLProtobufComprehensive:
     # Command Classes Tests
     # ===============================
 
-    def test_command_get_catalogs(self):
+    def test_command_get_catalogs(self) -> None:
         """Test CommandGetCatalogs class."""
         command = CommandGetCatalogs()
         assert hasattr(command, "__dict__")
 
-    def test_command_get_db_schemas(self):
+    def test_command_get_db_schemas(self) -> None:
         """Test CommandGetDbSchemas class."""
         command = CommandGetDbSchemas()
         command.catalog = "test_catalog"
@@ -399,7 +399,7 @@ class TestFlightSQLProtobufComprehensive:
         assert command.catalog == "test_catalog"
         assert command.db_schema_filter_pattern == "test_%"
 
-    def test_command_get_tables(self):
+    def test_command_get_tables(self) -> None:
         """Test CommandGetTables class."""
         command = CommandGetTables()
         command.catalog = "main"
@@ -414,7 +414,7 @@ class TestFlightSQLProtobufComprehensive:
         assert command.table_types == ["TABLE", "VIEW"]
         assert command.include_schema
 
-    def test_command_get_columns(self):
+    def test_command_get_columns(self) -> None:
         """Test CommandGetColumns class."""
         command = CommandGetColumns()
         command.catalog = "test_catalog"
@@ -427,14 +427,14 @@ class TestFlightSQLProtobufComprehensive:
         assert command.table_name_filter_pattern == "test_table"
         assert command.column_name_filter_pattern == "test_column%"
 
-    def test_command_get_sql_info(self):
+    def test_command_get_sql_info(self) -> None:
         """Test CommandGetSqlInfo class."""
         command = CommandGetSqlInfo()
         command.info.extend([500, 501, 502])
 
         assert list(command.info) == [500, 501, 502]
 
-    def test_command_statement_query(self):
+    def test_command_statement_query(self) -> None:
         """Test CommandStatementQuery class."""
         command = CommandStatementQuery()
         command.query = "SELECT * FROM test_table"
@@ -443,7 +443,7 @@ class TestFlightSQLProtobufComprehensive:
         assert command.query == "SELECT * FROM test_table"
         assert command.transaction_id == b"tx_test"
 
-    def test_command_statement_update(self):
+    def test_command_statement_update(self) -> None:
         """Test CommandStatementUpdate class."""
         command = CommandStatementUpdate()
         command.query = "UPDATE test_table SET col1 = 'value'"
@@ -452,14 +452,14 @@ class TestFlightSQLProtobufComprehensive:
         assert command.query == "UPDATE test_table SET col1 = 'value'"
         assert command.transaction_id == b"tx_update"
 
-    def test_command_prepared_statement_query(self):
+    def test_command_prepared_statement_query(self) -> None:
         """Test CommandPreparedStatementQuery class."""
         command = CommandPreparedStatementQuery()
         command.prepared_statement_handle = b"stmt_query_test"
 
         assert command.prepared_statement_handle == b"stmt_query_test"
 
-    def test_command_prepared_statement_update(self):
+    def test_command_prepared_statement_update(self) -> None:
         """Test CommandPreparedStatementUpdate class."""
         command = CommandPreparedStatementUpdate()
         command.prepared_statement_handle = b"stmt_update_test"
@@ -470,7 +470,7 @@ class TestFlightSQLProtobufComprehensive:
     # Error Handling Tests
     # ===============================
 
-    def test_parse_invalid_protobuf_data(self):
+    def test_parse_invalid_protobuf_data(self) -> None:
         """Test parsing invalid protobuf data doesn't crash."""
         invalid_data = [
             b"",  # Empty
@@ -491,7 +491,7 @@ class TestFlightSQLProtobufComprehensive:
             assert result2 is None or isinstance(result2, str)
             assert isinstance(result3, tuple) and len(result3) == 5
 
-    def test_schema_creation_edge_cases(self):
+    def test_schema_creation_edge_cases(self) -> None:
         """Test schema creation with edge cases."""
         # Test that all schema methods work without parameters
         schema_methods = [
@@ -511,7 +511,7 @@ class TestFlightSQLProtobufComprehensive:
             assert isinstance(schema, pa.Schema)
             assert len(schema) > 0
 
-    def test_handle_generation_uniqueness(self):
+    def test_handle_generation_uniqueness(self) -> None:
         """Test that prepared statement handles are unique."""
         handles = set()
         for _ in range(100):
@@ -523,7 +523,7 @@ class TestFlightSQLProtobufComprehensive:
     # Integration Tests
     # ===============================
 
-    def test_full_command_lifecycle(self):
+    def test_full_command_lifecycle(self) -> None:
         """Test a complete command lifecycle."""
         # Create a prepared statement
         handle = self.protobuf.create_prepared_statement_handle()
@@ -545,7 +545,7 @@ class TestFlightSQLProtobufComprehensive:
         assert isinstance(result, (bytes, str))
         assert len(result) > 0
 
-    def test_type_url_constants_completeness(self):
+    def test_type_url_constants_completeness(self) -> None:
         """Test that all required type URL constants are defined."""
         required_constants = [
             "COMMAND_STATEMENT_QUERY_TYPE_URL",
@@ -575,7 +575,7 @@ class TestFlightSQLProtobufComprehensive:
     # Performance Tests
     # ===============================
 
-    def test_schema_generation_performance(self):
+    def test_schema_generation_performance(self) -> None:
         """Test that schema generation is reasonably fast."""
         import time
 
@@ -588,7 +588,7 @@ class TestFlightSQLProtobufComprehensive:
         # Should complete 100 schema generations in under 1 second
         assert (end_time - start_time) < 1.0
 
-    def test_handle_generation_performance(self):
+    def test_handle_generation_performance(self) -> None:
         """Test that handle generation is reasonably fast."""
         import time
 
@@ -633,7 +633,7 @@ class TestFlightSQLProtobufComprehensive:
     # Complex Protobuf Tests
     # ===============================
 
-    def test_varint_parsing(self):
+    def test_varint_parsing(self) -> None:
         """Test parsing of protobuf varint encoding."""
         # Create test data with varint length prefix
         sql = "SELECT column1, column2 FROM table1 WHERE condition = 'value'"
@@ -647,7 +647,7 @@ class TestFlightSQLProtobufComprehensive:
             assert result is not None
             assert sql in result or result in sql or len(result) > 10
 
-    def test_binary_schema_handling(self):
+    def test_binary_schema_handling(self) -> None:
         """Test handling of binary schema data in table schemas."""
         schema = self.protobuf.get_tables_schema_with_included_schema()
 
@@ -670,7 +670,7 @@ class TestFlightSQLProtobufComprehensive:
 class TestParseAnyCommand:
     """Test the parse_any_command utility function."""
 
-    def test_parse_any_command_valid(self):
+    def test_parse_any_command_valid(self) -> None:
         """Test parsing valid Any protobuf message."""
         # Create a simple Any message
         any_msg = any_pb2.Any()
@@ -684,14 +684,14 @@ class TestParseAnyCommand:
         assert result.type_url == "type.googleapis.com/test.Message"
         assert result.value == b"test_value"
 
-    def test_parse_any_command_invalid(self):
+    def test_parse_any_command_invalid(self) -> None:
         """Test parsing invalid protobuf data."""
         invalid_data = b"not_protobuf_data"
         result = parse_any_command(invalid_data)
 
         assert result is None
 
-    def test_parse_any_command_empty(self):
+    def test_parse_any_command_empty(self) -> None:
         """Test parsing empty data."""
         result = parse_any_command(b"")
         # The implementation may return an empty Any message rather than None
@@ -701,7 +701,7 @@ class TestParseAnyCommand:
 class TestActionClasses:
     """Test FlightSQL action request/response classes."""
 
-    def test_action_create_prepared_statement_request(self):
+    def test_action_create_prepared_statement_request(self) -> None:
         """Test ActionCreatePreparedStatementRequest class."""
         request = ActionCreatePreparedStatementRequest()
         request.query = "SELECT * FROM users WHERE id = ?"
@@ -710,20 +710,20 @@ class TestActionClasses:
         assert request.query == "SELECT * FROM users WHERE id = ?"
         assert request.transaction_id == b"tx_123"
 
-    def test_action_close_prepared_statement_request(self):
+    def test_action_close_prepared_statement_request(self) -> None:
         """Test ActionClosePreparedStatementRequest class."""
         request = ActionClosePreparedStatementRequest()
         request.prepared_statement_handle = b"stmt_456"
 
         assert request.prepared_statement_handle == b"stmt_456"
 
-    def test_action_begin_transaction_request(self):
+    def test_action_begin_transaction_request(self) -> None:
         """Test ActionBeginTransactionRequest class."""
         request = ActionBeginTransactionRequest()
         # Test that the class can be instantiated
         assert hasattr(request, "__dict__")
 
-    def test_action_end_transaction_request(self):
+    def test_action_end_transaction_request(self) -> None:
         """Test ActionEndTransactionRequest class."""
         from mpzsql.flightsql.generated.FlightSql_pb2 import (
             ActionEndTransactionRequest as GeneratedActionEndTransactionRequest,
@@ -738,7 +738,7 @@ class TestActionClasses:
 
         assert hasattr(request, "__dict__")
 
-    def test_do_put_update_result(self):
+    def test_do_put_update_result(self) -> None:
         """Test DoPutUpdateResult class."""
         result = DoPutUpdateResult()
         result.record_count = 42

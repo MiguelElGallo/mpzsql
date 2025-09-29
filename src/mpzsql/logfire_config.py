@@ -94,7 +94,7 @@ class LogfireManager:
         return FallbackLogger()
 
     @classmethod
-    def get_logger(cls, name: str = None):
+    def get_logger(cls, name: str | None = None):
         """Get a logfire logger instance."""
         if not cls._initialized:
             cls.initialize()
@@ -105,6 +105,15 @@ class LogfireManager:
         """Create a logfire span."""
         if not cls._initialized:
             cls.initialize()
+        if cls._logfire_instance is None:
+            # Return a dummy context manager
+            from contextlib import contextmanager
+
+            @contextmanager
+            def dummy_span():
+                yield
+
+            return dummy_span()
         return cls._logfire_instance.span(name, **kwargs)
 
     @classmethod
@@ -112,6 +121,9 @@ class LogfireManager:
         """Log an info message."""
         if not cls._initialized:
             cls.initialize()
+        if cls._logfire_instance is None:
+            print(f"INFO: {message}")
+            return
         cls._logfire_instance.info(message, **kwargs)
 
     @classmethod
@@ -119,6 +131,9 @@ class LogfireManager:
         """Log a debug message."""
         if not cls._initialized:
             cls.initialize()
+        if cls._logfire_instance is None:
+            print(f"DEBUG: {message}")
+            return
         cls._logfire_instance.debug(message, **kwargs)
 
     @classmethod
@@ -126,6 +141,9 @@ class LogfireManager:
         """Log a warning message."""
         if not cls._initialized:
             cls.initialize()
+        if cls._logfire_instance is None:
+            print(f"WARNING: {message}")
+            return
         cls._logfire_instance.warning(message, **kwargs)
 
     @classmethod
@@ -133,6 +151,9 @@ class LogfireManager:
         """Log an error message."""
         if not cls._initialized:
             cls.initialize()
+        if cls._logfire_instance is None:
+            print(f"ERROR: {message}")
+            return
         cls._logfire_instance.error(message, **kwargs)
 
 

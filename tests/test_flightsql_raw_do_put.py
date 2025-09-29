@@ -19,7 +19,7 @@ from src.mpzsql.flightsql.minimal import MinimalFlightSQLServer
 class TestFlightSQLRawDoPut:
     """Test raw Flight do_put functionality with PATH descriptors."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.config = ServerConfig(
             secret_key="test_secret", username="test_user", password="test_pass"
@@ -41,7 +41,7 @@ class TestFlightSQLRawDoPut:
         return pa.table(data)
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_do_put_path_descriptor_batch_mode(self):
+    def test_do_put_path_descriptor_batch_mode(self) -> None:
         """Test do_put with PATH descriptor (batch mode - single chunk)."""
         table_name = "test_upload_table"
 
@@ -68,7 +68,7 @@ class TestFlightSQLRawDoPut:
         )
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_do_put_path_descriptor_streaming_mode(self):
+    def test_do_put_path_descriptor_streaming_mode(self) -> None:
         """Test do_put with PATH descriptor (streaming mode - multiple chunks)."""
         # Setup
         arrow_table = self.create_sample_arrow_table()
@@ -94,7 +94,7 @@ class TestFlightSQLRawDoPut:
         )
 
     @pytest.mark.skip(reason="_handle_flightsql_do_put method not implemented")
-    def test_do_put_cmd_descriptor_flightsql_compatibility(self):
+    def test_do_put_cmd_descriptor_flightsql_compatibility(self) -> None:
         """Test do_put with CMD descriptor (existing FlightSQL functionality)."""
         from google.protobuf import any_pb2
 
@@ -131,7 +131,7 @@ class TestFlightSQLRawDoPut:
         # Verify FlightSQL command was executed
         self.backend.execute_update.assert_called_once_with(command.query)
 
-    def test_get_flight_info_path_descriptor(self):
+    def test_get_flight_info_path_descriptor(self) -> None:
         """Test get_flight_info with PATH descriptor returns FlightInfo with schema and rows."""
         # Setup
         table_name = "info_test_table"
@@ -152,7 +152,7 @@ class TestFlightSQLRawDoPut:
         assert flight_info.schema == test_schema
         assert flight_info.total_records == 5
 
-    def test_get_flight_info_cmd_descriptor_flightsql(self):
+    def test_get_flight_info_cmd_descriptor_flightsql(self) -> None:
         """Test get_flight_info with CMD descriptor (FlightSQL compatibility)."""
         from google.protobuf import any_pb2
 
@@ -192,7 +192,7 @@ class TestFlightSQLRawDoPut:
     @pytest.mark.skip(
         reason="Test depends on unimplemented _handle_file_upload_do_put and _handle_flightsql_do_put methods"
     )
-    def test_descriptor_routing_cmd_vs_path(self):
+    def test_descriptor_routing_cmd_vs_path(self) -> None:
         """Test that do_put correctly routes between CMD and PATH descriptors."""
         # Test PATH descriptor routing
         path_descriptor = pf.FlightDescriptor.for_path(b"table_name")
@@ -232,7 +232,7 @@ class TestFlightSQLRawDoPut:
             )
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_handle_file_upload_do_put_functionality(self):
+    def test_handle_file_upload_do_put_functionality(self) -> None:
         """Test the _handle_file_upload_do_put method directly."""
         # Setup
         arrow_table = self.create_sample_arrow_table()
@@ -258,7 +258,7 @@ class TestFlightSQLRawDoPut:
         )
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_handle_file_upload_error_handling(self):
+    def test_handle_file_upload_error_handling(self) -> None:
         """Test error handling in _handle_file_upload_do_put method."""
         # Setup
         arrow_table = self.create_sample_arrow_table()
@@ -282,7 +282,7 @@ class TestFlightSQLRawDoPut:
 
         assert "Database error" in str(exc_info.value)
 
-    def test_get_flight_info_path_descriptor_error_handling(self):
+    def test_get_flight_info_path_descriptor_error_handling(self) -> None:
         """Test error handling in PATH descriptor get_flight_info when backend raises."""
         # Setup
         table_name = "nonexistent_table"
@@ -303,7 +303,7 @@ class TestFlightSQLRawDoPut:
         assert flight_info.total_records == 0
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_large_table_upload(self):
+    def test_large_table_upload(self) -> None:
         """Test handling of large table uploads."""
         # Setup large table
         num_rows = 10000
@@ -333,7 +333,7 @@ class TestFlightSQLRawDoPut:
         )
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_multiple_concurrent_uploads(self):
+    def test_multiple_concurrent_uploads(self) -> None:
         """Test multiple concurrent table uploads (simulated)."""
         # Simulate multiple table uploads by calling the handler multiple times
         table_names = ["concurrent_table_1", "concurrent_table_2", "concurrent_table_3"]
@@ -364,7 +364,7 @@ class TestFlightSQLRawDoPut:
             )
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_qualified_table_names(self):
+    def test_qualified_table_names(self) -> None:
         """Test PATH descriptors with qualified table names."""
         qualified_names = [
             "simple_table",
@@ -404,7 +404,7 @@ class TestFlightSQLRawDoPut:
             )
 
     @pytest.mark.skip(reason="_handle_file_upload_do_put method not implemented")
-    def test_path_descriptor_table_name_extraction(self):
+    def test_path_descriptor_table_name_extraction(self) -> None:
         """Test proper extraction of table names from PATH descriptors."""
         test_cases = [
             (b"simple_table", "my_ducklake.main.simple_table"),

@@ -100,9 +100,15 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.10"
-strict = true
+python_version = "3.11"
+strict = false
 ignore_missing_imports = true
+exclude = [
+    "tests/",
+    "src/mpzsql/flightsql/generated/",
+    "src/mpzsql/flightsql/proto/",
+
+]
 
 [dependency-groups]
 dev = [

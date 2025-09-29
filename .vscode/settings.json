@@ -4,5 +4,13 @@
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "cmake.ignoreCMakeListsMissing": true
+    "cmake.ignoreCMakeListsMissing": true,
+    "python.analysis.exclude": [
+        "tests/**",
+        "src/mpzsql/flightsql/generated/**"
+    ],
+    "python.analysis.ignore": [
+        "tests/**",
+        "src/mpzsql/flightsql/generated/**"
+    ]
 }

@@ -20,7 +20,7 @@ from mpzsql.config import ServerConfig
 class TestSQLiteBackendComprehensive:
     """Comprehensive test suite for SQLite backend."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         # Create temporary database file
         self.db_fd, self.db_path = tempfile.mkstemp(suffix=".db")
@@ -81,12 +81,12 @@ class TestSQLiteBackendComprehensive:
         self.config.database = self.db_path
         self.config.read_only = False
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Clean up test fixtures."""
         if os.path.exists(self.db_path):
             os.unlink(self.db_path)
 
-    def test_init_with_valid_database(self):
+    def test_init_with_valid_database(self) -> None:
         """Test initialization with valid database file."""
         backend = SQLiteBackend(self.config)
         assert backend.connection is not None
@@ -96,7 +96,7 @@ class TestSQLiteBackendComprehensive:
         result = backend.connection.execute("SELECT 1").fetchone()
         assert result[0] == 1
 
-    def test_init_without_database_raises_error(self):
+    def test_init_without_database_raises_error(self) -> None:
         """Test initialization without database file raises ValueError."""
         config = Mock(spec=ServerConfig)
         config.database = None
@@ -104,7 +104,7 @@ class TestSQLiteBackendComprehensive:
         with pytest.raises(ValueError, match="SQLite backend requires a database file"):
             SQLiteBackend(config)
 
-    def test_init_with_nonexistent_database_creates_file(self):
+    def test_init_with_nonexistent_database_creates_file(self) -> None:
         """Test initialization with nonexistent database creates the file."""
         nonexistent_path = "/tmp/test_nonexistent.db"
         if os.path.exists(nonexistent_path):
@@ -122,7 +122,7 @@ class TestSQLiteBackendComprehensive:
             if os.path.exists(nonexistent_path):
                 os.unlink(nonexistent_path)
 
-    def test_init_read_only_mode(self):
+    def test_init_read_only_mode(self) -> None:
         """Test initialization in read-only mode."""
         self.config.read_only = True
         backend = SQLiteBackend(self.config)
@@ -137,7 +137,7 @@ class TestSQLiteBackendComprehensive:
                 "INSERT INTO users (name, email) VALUES ('Test', 'test@test.com')"
             )
 
-    def test_init_with_invalid_readonly_database(self):
+    def test_init_with_invalid_readonly_database(self) -> None:
         """Test initialization with invalid read-only database."""
         self.config.database = "/nonexistent/path/database.db"
         self.config.read_only = True
@@ -145,7 +145,7 @@ class TestSQLiteBackendComprehensive:
         with pytest.raises(Exception):
             SQLiteBackend(self.config)
 
-    def test_execute_sql_simple_statements(self):
+    def test_execute_sql_simple_statements(self) -> None:
         """Test execute_sql with simple SQL statements."""
         backend = SQLiteBackend(self.config)
 
@@ -166,7 +166,7 @@ class TestSQLiteBackendComprehensive:
         ).fetchone()
         assert result[0] == 1
 
-    def test_execute_sql_multiple_statements(self):
+    def test_execute_sql_multiple_statements(self) -> None:
         """Test execute_sql with multiple statements using executescript."""
         backend = SQLiteBackend(self.config)
 
@@ -182,14 +182,14 @@ class TestSQLiteBackendComprehensive:
         ).fetchone()
         assert result[0] == 2
 
-    def test_execute_sql_with_error(self):
+    def test_execute_sql_with_error(self) -> None:
         """Test execute_sql with invalid SQL raises exception."""
         backend = SQLiteBackend(self.config)
 
         with pytest.raises(Exception):
             backend.execute_sql("INVALID SQL STATEMENT")
 
-    def test_execute_query_simple_select(self):
+    def test_execute_query_simple_select(self) -> None:
         """Test execute_query with simple SELECT statement."""
         backend = SQLiteBackend(self.config)
 
@@ -205,7 +205,7 @@ class TestSQLiteBackendComprehensive:
         assert "Alice Smith" in names
         assert "Charlie Brown" in names
 
-    def test_execute_query_with_joins(self):
+    def test_execute_query_with_joins(self) -> None:
         """Test execute_query with JOIN statements."""
         backend = SQLiteBackend(self.config)
 
@@ -226,7 +226,7 @@ class TestSQLiteBackendComprehensive:
         assert data[0]["product"] == "Laptop"
         assert data[0]["price"] == 999.99
 
-    def test_execute_query_with_aggregations(self):
+    def test_execute_query_with_aggregations(self) -> None:
         """Test execute_query with aggregate functions."""
         backend = SQLiteBackend(self.config)
 
@@ -250,7 +250,7 @@ class TestSQLiteBackendComprehensive:
         assert abs(row["avg_age"] - 27.67) < 0.1  # (30+25+28)/3
         assert abs(row["total_balance"] - 3501.5) < 0.1  # Sum of active users' balances
 
-    def test_execute_query_empty_result(self):
+    def test_execute_query_empty_result(self) -> None:
         """Test execute_query with query returning no rows."""
         backend = SQLiteBackend(self.config)
 
@@ -268,7 +268,7 @@ class TestSQLiteBackendComprehensive:
             "created_at",
         ]
 
-    def test_execute_query_with_different_data_types(self):
+    def test_execute_query_with_different_data_types(self) -> None:
         """Test execute_query with various SQLite data types."""
         backend = SQLiteBackend(self.config)
 
@@ -296,7 +296,7 @@ class TestSQLiteBackendComprehensive:
         assert "is_active" in field_names
         assert "created_at" in field_names
 
-    def test_execute_query_with_null_values(self):
+    def test_execute_query_with_null_values(self) -> None:
         """Test execute_query handling NULL values."""
         backend = SQLiteBackend(self.config)
 
@@ -319,14 +319,14 @@ class TestSQLiteBackendComprehensive:
         assert email_col[0].as_py() is None
         assert age_col[0].as_py() is None
 
-    def test_execute_query_with_error(self):
+    def test_execute_query_with_error(self) -> None:
         """Test execute_query with invalid SQL raises exception."""
         backend = SQLiteBackend(self.config)
 
         with pytest.raises(Exception):
             backend.execute_query("SELECT FROM invalid_table")
 
-    def test_execute_update_insert(self):
+    def test_execute_update_insert(self) -> None:
         """Test execute_update with INSERT statement."""
         backend = SQLiteBackend(self.config)
 
@@ -341,7 +341,7 @@ class TestSQLiteBackendComprehensive:
         result = backend.execute_query("SELECT COUNT(*) as count FROM users")
         assert result.to_pylist()[0]["count"] == 5
 
-    def test_execute_update_update_statement(self):
+    def test_execute_update_update_statement(self) -> None:
         """Test execute_update with UPDATE statement."""
         backend = SQLiteBackend(self.config)
 
@@ -357,7 +357,7 @@ class TestSQLiteBackendComprehensive:
         )
         assert result.to_pylist()[0]["age"] == 31  # Was 30, now 31
 
-    def test_execute_update_delete_statement(self):
+    def test_execute_update_delete_statement(self) -> None:
         """Test execute_update with DELETE statement."""
         backend = SQLiteBackend(self.config)
 
@@ -369,7 +369,7 @@ class TestSQLiteBackendComprehensive:
         result = backend.execute_query("SELECT COUNT(*) as count FROM users")
         assert result.to_pylist()[0]["count"] == 3
 
-    def test_execute_update_no_rows_affected(self):
+    def test_execute_update_no_rows_affected(self) -> None:
         """Test execute_update when no rows are affected."""
         backend = SQLiteBackend(self.config)
 
@@ -379,14 +379,14 @@ class TestSQLiteBackendComprehensive:
 
         assert affected_rows == 0
 
-    def test_execute_update_with_error(self):
+    def test_execute_update_with_error(self) -> None:
         """Test execute_update with invalid SQL raises exception."""
         backend = SQLiteBackend(self.config)
 
         with pytest.raises(Exception):
             backend.execute_update("UPDATE nonexistent_table SET col = 1")
 
-    def test_get_statement_schema_simple_query(self):
+    def test_get_statement_schema_simple_query(self) -> None:
         """Test get_statement_schema with simple query."""
         backend = SQLiteBackend(self.config)
 
@@ -395,7 +395,7 @@ class TestSQLiteBackendComprehensive:
         assert isinstance(schema, pa.Schema)
         assert schema.names == ["name", "age"]
 
-    def test_get_statement_schema_complex_query(self):
+    def test_get_statement_schema_complex_query(self) -> None:
         """Test get_statement_schema with complex query including joins."""
         backend = SQLiteBackend(self.config)
 
@@ -408,7 +408,7 @@ class TestSQLiteBackendComprehensive:
         assert isinstance(schema, pa.Schema)
         assert schema.names == ["name", "product", "price"]
 
-    def test_get_statement_schema_with_aliases(self):
+    def test_get_statement_schema_with_aliases(self) -> None:
         """Test get_statement_schema with column aliases."""
         backend = SQLiteBackend(self.config)
 
@@ -423,7 +423,7 @@ class TestSQLiteBackendComprehensive:
         assert isinstance(schema, pa.Schema)
         assert schema.names == ["user_name", "user_age", "adjusted_balance"]
 
-    def test_get_statement_schema_with_error_fallback(self):
+    def test_get_statement_schema_with_error_fallback(self) -> None:
         """Test get_statement_schema fallback behavior with invalid query."""
         backend = SQLiteBackend(self.config)
 
@@ -434,7 +434,7 @@ class TestSQLiteBackendComprehensive:
         # Should return generic fallback schema
         assert len(schema.names) >= 1
 
-    def test_get_catalogs(self):
+    def test_get_catalogs(self) -> None:
         """Test get_catalogs method."""
         backend = SQLiteBackend(self.config)
 
@@ -448,7 +448,7 @@ class TestSQLiteBackendComprehensive:
         catalog_names = result.column("catalog_name").to_pylist()
         assert "main" in catalog_names
 
-    def test_get_schemas(self):
+    def test_get_schemas(self) -> None:
         """Test get_schemas method."""
         backend = SQLiteBackend(self.config)
 
@@ -465,7 +465,7 @@ class TestSQLiteBackendComprehensive:
         # SQLite should have at least ('main', '')
         assert ("main", "") in schemas
 
-    def test_get_schemas_with_catalog_filter(self):
+    def test_get_schemas_with_catalog_filter(self) -> None:
         """Test get_schemas with specific catalog."""
         backend = SQLiteBackend(self.config)
 
@@ -476,7 +476,7 @@ class TestSQLiteBackendComprehensive:
         for catalog, schema in schemas:
             assert catalog == "main"
 
-    def test_get_tables_arrow(self):
+    def test_get_tables_arrow(self) -> None:
         """Test get_tables method returning Arrow table."""
         backend = SQLiteBackend(self.config)
 
@@ -499,7 +499,7 @@ class TestSQLiteBackendComprehensive:
         assert "users" in table_names
         assert "orders" in table_names
 
-    def test_get_tables_with_filters(self):
+    def test_get_tables_with_filters(self) -> None:
         """Test get_tables with various filters."""
         backend = SQLiteBackend(self.config)
 
@@ -517,7 +517,7 @@ class TestSQLiteBackendComprehensive:
         table_types = result.column("table_type").to_pylist()
         assert all(t == "BASE TABLE" for t in table_types)
 
-    def test_get_sql_info(self):
+    def test_get_sql_info(self) -> None:
         """Test get_sql_info method."""
         backend = SQLiteBackend(self.config)
 
@@ -540,7 +540,7 @@ class TestSQLiteBackendComprehensive:
             elif row["info_name"] == "SQL_DBMS_VER":
                 assert isinstance(row["info_value"], str)
 
-    def test_get_sql_info_unknown_codes(self):
+    def test_get_sql_info_unknown_codes(self) -> None:
         """Test get_sql_info with unknown info codes."""
         backend = SQLiteBackend(self.config)
 
@@ -553,7 +553,7 @@ class TestSQLiteBackendComprehensive:
         assert data[0]["info_name"] == "SQL_INFO_999"
         assert data[0]["info_value"] == "Unknown"
 
-    def test_get_db_schemas(self):
+    def test_get_db_schemas(self) -> None:
         """Test get_db_schemas method."""
         backend = SQLiteBackend(self.config)
 
@@ -568,7 +568,7 @@ class TestSQLiteBackendComprehensive:
         catalog_names = [row["catalog_name"] for row in data]
         assert "main" in catalog_names
 
-    def test_get_db_schemas_with_catalog(self):
+    def test_get_db_schemas_with_catalog(self) -> None:
         """Test get_db_schemas with specific catalog."""
         backend = SQLiteBackend(self.config)
 
@@ -581,7 +581,7 @@ class TestSQLiteBackendComprehensive:
         for row in data:
             assert row["catalog_name"] == "main"
 
-    def test_get_columns(self):
+    def test_get_columns(self) -> None:
         """Test get_columns method."""
         backend = SQLiteBackend(self.config)
 
@@ -616,7 +616,7 @@ class TestSQLiteBackendComprehensive:
         assert "name" in table_columns["users"]
         assert "email" in table_columns["users"]
 
-    def test_get_columns_with_filters(self):
+    def test_get_columns_with_filters(self) -> None:
         """Test get_columns with various filters."""
         backend = SQLiteBackend(self.config)
 
@@ -636,7 +636,7 @@ class TestSQLiteBackendComprehensive:
         for row in data:
             assert "name" in row["column_name"]
 
-    def test_get_catalogs_old(self):
+    def test_get_catalogs_old(self) -> None:
         """Test deprecated get_catalogs_old method."""
         backend = SQLiteBackend(self.config)
 
@@ -646,7 +646,7 @@ class TestSQLiteBackendComprehensive:
         assert len(catalogs) >= 1
         assert "main" in catalogs
 
-    def test_get_schemas_old(self):
+    def test_get_schemas_old(self) -> None:
         """Test deprecated get_schemas_old method."""
         backend = SQLiteBackend(self.config)
 
@@ -656,7 +656,7 @@ class TestSQLiteBackendComprehensive:
         assert len(schemas) >= 1
         assert "" in schemas  # Empty string for default schema
 
-    def test_get_tables_old(self):
+    def test_get_tables_old(self) -> None:
         """Test deprecated get_tables_old method."""
         backend = SQLiteBackend(self.config)
 
@@ -677,7 +677,7 @@ class TestSQLiteBackendComprehensive:
             assert isinstance(table_name, str)
             assert isinstance(table_type, str)
 
-    def test_get_tables_old_with_filters(self):
+    def test_get_tables_old_with_filters(self) -> None:
         """Test deprecated get_tables_old with filters."""
         backend = SQLiteBackend(self.config)
 
@@ -689,7 +689,7 @@ class TestSQLiteBackendComprehensive:
         for catalog, schema, table_name, table_type in tables:
             assert "users" in table_name
 
-    def test_close_connection(self):
+    def test_close_connection(self) -> None:
         """Test close method."""
         backend = SQLiteBackend(self.config)
 
@@ -703,7 +703,7 @@ class TestSQLiteBackendComprehensive:
         # Note: SQLite doesn't have a reliable way to check if connection is closed
         # This test mainly ensures the close method doesn't raise an exception
 
-    def test_close_connection_error_handling(self):
+    def test_close_connection_error_handling(self) -> None:
         """Test close method error handling."""
         backend = SQLiteBackend(self.config)
 
@@ -717,7 +717,7 @@ class TestSQLiteBackendComprehensive:
             # If it does raise an exception, it should be logged but not propagated
             pass
 
-    def test_infer_arrow_type_integers(self):
+    def test_infer_arrow_type_integers(self) -> None:
         """Test _infer_arrow_type with integer values."""
         backend = SQLiteBackend(self.config)
 
@@ -735,7 +735,7 @@ class TestSQLiteBackendComprehensive:
         arrow_type = backend._infer_arrow_type(values_with_none)
         assert arrow_type == pa.int8()
 
-    def test_infer_arrow_type_floats(self):
+    def test_infer_arrow_type_floats(self) -> None:
         """Test _infer_arrow_type with float values."""
         backend = SQLiteBackend(self.config)
 
@@ -743,7 +743,7 @@ class TestSQLiteBackendComprehensive:
         arrow_type = backend._infer_arrow_type(values)
         assert arrow_type == pa.float64()
 
-    def test_infer_arrow_type_strings(self):
+    def test_infer_arrow_type_strings(self) -> None:
         """Test _infer_arrow_type with string values."""
         backend = SQLiteBackend(self.config)
 
@@ -751,7 +751,7 @@ class TestSQLiteBackendComprehensive:
         arrow_type = backend._infer_arrow_type(values)
         assert arrow_type == pa.string()
 
-    def test_infer_arrow_type_mixed(self):
+    def test_infer_arrow_type_mixed(self) -> None:
         """Test _infer_arrow_type with mixed values defaults to string."""
         backend = SQLiteBackend(self.config)
 
@@ -759,7 +759,7 @@ class TestSQLiteBackendComprehensive:
         arrow_type = backend._infer_arrow_type(values)
         assert arrow_type == pa.string()
 
-    def test_infer_arrow_type_all_none(self):
+    def test_infer_arrow_type_all_none(self) -> None:
         """Test _infer_arrow_type with all None values."""
         backend = SQLiteBackend(self.config)
 
@@ -767,7 +767,7 @@ class TestSQLiteBackendComprehensive:
         arrow_type = backend._infer_arrow_type(values)
         assert arrow_type == pa.string()  # Default fallback
 
-    def test_infer_schema_from_cursor_description(self):
+    def test_infer_schema_from_cursor_description(self) -> None:
         """Test _infer_schema_from_cursor_description method."""
         backend = SQLiteBackend(self.config)
 
@@ -786,7 +786,7 @@ class TestSQLiteBackendComprehensive:
         for field in schema:
             assert field.type == pa.string()
 
-    def test_connection_row_factory(self):
+    def test_connection_row_factory(self) -> None:
         """Test that connection uses Row factory for column access by name."""
         backend = SQLiteBackend(self.config)
 
@@ -798,7 +798,7 @@ class TestSQLiteBackendComprehensive:
         assert row["name"] == "Alice Smith"
         assert row["age"] == 30
 
-    def test_concurrent_access_thread_safety(self):
+    def test_concurrent_access_thread_safety(self) -> None:
         """Test that check_same_thread=False allows multi-threaded access."""
         backend = SQLiteBackend(self.config)
 

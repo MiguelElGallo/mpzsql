@@ -17,7 +17,7 @@ from mpzsql.server import MPZSQLServer
 class TestMPZSQLServerBasedOnLogs:
     """Test MPZSQL server operations based on real server logs."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.config = Mock(spec=ServerConfig)
         self.config.hostname = "localhost"
@@ -29,7 +29,7 @@ class TestMPZSQLServerBasedOnLogs:
         self.config.secret_key = "test-secret"
         self.config.read_only = False
 
-    def test_server_initialization_from_logs(self):
+    def test_server_initialization_from_logs(self) -> None:
         """Test server initialization based on log sequence."""
         # From logs: "MinimalFlightSQLServer initialized"
         mock_connection = Mock()
@@ -79,7 +79,7 @@ class TestMPZSQLServerBasedOnLogs:
                 # Verify MinimalFlightSQLServer was created
                 mock_server_class.assert_called()
 
-    def test_server_configuration_validation(self):
+    def test_server_configuration_validation(self) -> None:
         """Test server configuration validation."""
         mock_connection = Mock()
 
@@ -88,7 +88,7 @@ class TestMPZSQLServerBasedOnLogs:
         assert server.config.hostname == "localhost"
         assert server.config.port == 8080
 
-    def test_server_with_tls_configuration(self):
+    def test_server_with_tls_configuration(self) -> None:
         """Test server with TLS configuration."""
         self.config.tls_cert = "cert.pem"
         self.config.tls_key = "key.pem"
@@ -100,7 +100,7 @@ class TestMPZSQLServerBasedOnLogs:
         assert server.config.tls_cert == "cert.pem"
         assert server.config.tls_key == "key.pem"
 
-    def test_server_with_authentication_configuration(self):
+    def test_server_with_authentication_configuration(self) -> None:
         """Test server with authentication configuration."""
         self.config.username = "admin"
         self.config.password = "password"
@@ -131,7 +131,7 @@ class TestMPZSQLServerBasedOnLogs:
         assert signal.SIGINT in signals_set
         assert signal.SIGTERM in signals_set
 
-    def test_server_shutdown_handling(self):
+    def test_server_shutdown_handling(self) -> None:
         """Test server shutdown handling."""
         mock_connection = Mock()
 
@@ -158,7 +158,7 @@ class TestMPZSQLServerBasedOnLogs:
             # Verify console is available for logging
             assert mock_console is not None
 
-    def test_server_connection_handling(self):
+    def test_server_connection_handling(self) -> None:
         """Test server connection handling."""
         mock_connection = Mock()
 
@@ -168,7 +168,7 @@ class TestMPZSQLServerBasedOnLogs:
         assert server.duckdb_connection == mock_connection
         assert server.config == self.config
 
-    def test_server_port_configuration(self):
+    def test_server_port_configuration(self) -> None:
         """Test server port configuration."""
         # Test different port configurations
         ports = [8080, 9090, 443, 8443]
@@ -181,7 +181,7 @@ class TestMPZSQLServerBasedOnLogs:
                 server = MPZSQLServer(self.config, mock_connection)
                 assert server.config.port == port
 
-    def test_server_hostname_configuration(self):
+    def test_server_hostname_configuration(self) -> None:
         """Test server hostname configuration."""
         # Test different hostname configurations
         hostnames = ["localhost", "0.0.0.0", "example.com", "127.0.0.1"]
@@ -194,7 +194,7 @@ class TestMPZSQLServerBasedOnLogs:
                 server = MPZSQLServer(self.config, mock_connection)
                 assert server.config.hostname == hostname
 
-    def test_server_error_handling_during_initialization(self):
+    def test_server_error_handling_during_initialization(self) -> None:
         """Test server error handling during initialization."""
         mock_connection = Mock()
 
@@ -215,7 +215,7 @@ class TestMPZSQLServerBasedOnLogs:
                 with pytest.raises(Exception, match="Backend creation failed"):
                     server.start()
 
-    def test_server_read_only_configuration(self):
+    def test_server_read_only_configuration(self) -> None:
         """Test server read-only configuration."""
         self.config.read_only = True
         mock_connection = Mock()
@@ -225,7 +225,7 @@ class TestMPZSQLServerBasedOnLogs:
         # Verify read-only configuration is stored
         assert server.config.read_only is True
 
-    def test_server_minimal_flight_sql_integration(self):
+    def test_server_minimal_flight_sql_integration(self) -> None:
         """Test integration with MinimalFlightSQLServer."""
         mock_connection = Mock()
 
@@ -242,13 +242,13 @@ class TestMPZSQLServerBasedOnLogs:
 class TestMPZSQLServerLoggingBasedOnLogs:
     """Test server logging behavior based on real log outputs."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.config = Mock(spec=ServerConfig)
         self.config.hostname = "localhost"
         self.config.port = 8080
 
-    def test_logger_initialization_from_logs(self):
+    def test_logger_initialization_from_logs(self) -> None:
         """Test logger initialization based on log patterns."""
         mock_connection = Mock()
 
@@ -288,7 +288,7 @@ class TestMPZSQLServerLoggingBasedOnLogs:
 class TestMPZSQLServerThreadingAndConcurrency:
     """Test server threading and concurrency aspects."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.config = Mock(spec=ServerConfig)
         self.config.hostname = "localhost"

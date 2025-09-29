@@ -17,7 +17,7 @@ from mpzsql.flightsql.protocol import (
 class TestFlightSQLCommands:
     """Test FlightSQL commands class."""
 
-    def test_command_constants_exist(self):
+    def test_command_constants_exist(self) -> None:
         """Test that command constants are defined."""
         # Test command constants
         assert hasattr(FlightSQLCommands, "COMMAND_STATEMENT_QUERY")
@@ -30,7 +30,7 @@ class TestFlightSQLCommands:
         assert hasattr(FlightSQLCommands, "ACTION_CREATE_PREPARED_STATEMENT")
         assert hasattr(FlightSQLCommands, "ACTION_BEGIN_TRANSACTION")
 
-    def test_command_values_are_strings(self):
+    def test_command_values_are_strings(self) -> None:
         """Test that command constants are strings."""
         commands = [
             FlightSQLCommands.COMMAND_STATEMENT_QUERY,
@@ -44,7 +44,7 @@ class TestFlightSQLCommands:
             assert isinstance(command, str)
             assert len(command) > 0
 
-    def test_action_values_are_strings(self):
+    def test_action_values_are_strings(self) -> None:
         """Test that action constants are strings."""
         actions = [
             FlightSQLCommands.ACTION_CREATE_PREPARED_STATEMENT,
@@ -59,11 +59,11 @@ class TestFlightSQLCommands:
 class TestFlightSQLSchemas:
     """Test FlightSQL schemas class."""
 
-    def test_schemas_class_exists(self):
+    def test_schemas_class_exists(self) -> None:
         """Test that FlightSQLSchemas class exists."""
         assert FlightSQLSchemas is not None
 
-    def test_get_catalogs_schema(self):
+    def test_get_catalogs_schema(self) -> None:
         """Test get_catalogs_schema method."""
         if hasattr(FlightSQLSchemas, "get_catalogs_schema"):
             schema = FlightSQLSchemas.get_catalogs_schema()
@@ -78,13 +78,13 @@ class TestFlightSQLSchemas:
 class TestFlightSQLProtocolModule:
     """Test FlightSQL protocol module functionality."""
 
-    def test_protocol_module_imports(self):
+    def test_protocol_module_imports(self) -> None:
         """Test that protocol module imports successfully."""
         import mpzsql.flightsql.protocol
 
         assert mpzsql.flightsql.protocol is not None
 
-    def test_protocol_constants_access(self):
+    def test_protocol_constants_access(self) -> None:
         """Test access to protocol constants through module."""
         import mpzsql.flightsql.protocol as protocol_module
 
@@ -92,7 +92,7 @@ class TestFlightSQLProtocolModule:
         assert hasattr(protocol_module, "FlightSQLCommands")
         assert hasattr(protocol_module, "FlightSQLSchemas")
 
-    def test_protocol_compatibility(self):
+    def test_protocol_compatibility(self) -> None:
         """Test protocol compatibility with PyArrow Flight."""
         # Test that protocol constants are compatible with PyArrow Flight
         import pyarrow.flight as pf

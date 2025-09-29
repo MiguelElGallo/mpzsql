@@ -8,6 +8,7 @@ and DuckDB-specific features like extensions and Arrow integration.
 
 import os
 import tempfile
+from typing import Any
 from unittest.mock import Mock, patch
 
 import duckdb
@@ -18,7 +19,7 @@ from mpzsql.backends.duckdb_backend import DuckDBBackend
 from mpzsql.config import ServerConfig
 
 
-def create_mock_config(**overrides):
+def create_mock_config(**overrides: Any) -> Mock:
     """Create a properly configured Mock ServerConfig with all required attributes."""
     config = Mock(spec=ServerConfig)
     # Set default values for all required attributes
@@ -49,12 +50,12 @@ def create_mock_config(**overrides):
 class TestDuckDBBackendComprehensive:
     """Comprehensive test suite for DuckDB backend."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         # Create test config for in-memory database using the helper function
         self.config = create_mock_config()
 
-    def test_init_with_memory_database(self):
+    def test_init_with_memory_database(self) -> None:
         """Test initialization with in-memory database."""
         backend = DuckDBBackend(self.config)
 
@@ -65,7 +66,7 @@ class TestDuckDBBackendComprehensive:
         result = backend.connection.execute("SELECT 1 as test").fetchone()
         assert result[0] == 1
 
-    def test_init_with_file_database(self):
+    def test_init_with_file_database(self) -> None:
         """Test initialization with file database."""
         # Create temporary database file with proper extension
         with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as tmp:
@@ -98,7 +99,7 @@ class TestDuckDBBackendComprehensive:
             if os.path.exists(db_path):
                 os.unlink(db_path)
 
-    def test_init_read_only_mode(self):
+    def test_init_read_only_mode(self) -> None:
         """Test initialization in read-only mode."""
         # First create a database with some data
         with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=False) as tmp:
@@ -133,7 +134,7 @@ class TestDuckDBBackendComprehensive:
             if os.path.exists(db_path):
                 os.unlink(db_path)
 
-    def test_init_with_existing_connection(self):
+    def test_init_with_existing_connection(self) -> None:
         """Test initialization with existing DuckDB connection."""
         # Create an existing connection
         existing_conn = duckdb.connect(":memory:")
@@ -162,7 +163,7 @@ class TestDuckDBBackendComprehensive:
         result = backend.execute_query("SELECT 1 as test")
         assert isinstance(result, pa.Table)
 
-    def test_execute_sql_simple_statements(self):
+    def test_execute_sql_simple_statements(self) -> None:
         """Test execute_sql with simple SQL statements."""
         backend = DuckDBBackend(self.config)
 
@@ -184,14 +185,14 @@ class TestDuckDBBackendComprehensive:
         ).fetchone()
         assert result[0] == 1
 
-    def test_execute_sql_with_error(self):
+    def test_execute_sql_with_error(self) -> None:
         """Test execute_sql with invalid SQL raises exception."""
         backend = DuckDBBackend(self.config)
 
         with pytest.raises(Exception):
             backend.execute_sql("INVALID SQL STATEMENT")
 
-    def test_execute_query_simple_select(self):
+    def test_execute_query_simple_select(self) -> None:
         """Test execute_query with simple SELECT statement."""
         backend = DuckDBBackend(self.config)
 
@@ -222,7 +223,7 @@ class TestDuckDBBackendComprehensive:
         assert "Alice" in names
         assert "Charlie" in names
 
-    def test_execute_query_with_parameters(self):
+    def test_execute_query_with_parameters(self) -> None:
         """Test execute_query with parameterized queries."""
         backend = DuckDBBackend(self.config)
 
@@ -239,7 +240,7 @@ class TestDuckDBBackendComprehensive:
         assert data[0]["id"] == 1
         assert data[0]["value"] == "hello"
 
-    def test_execute_query_with_aggregations(self):
+    def test_execute_query_with_aggregations(self) -> None:
         """Test execute_query with aggregate functions."""
         backend = DuckDBBackend(self.config)
 
@@ -277,7 +278,7 @@ class TestDuckDBBackendComprehensive:
         assert abs(row["avg_price"] - 366.83) < 0.1
         assert row["max_price"] == 999.99
 
-    def test_execute_query_empty_result(self):
+    def test_execute_query_empty_result(self) -> None:
         """Test execute_query with query returning no rows."""
         backend = DuckDBBackend(self.config)
 
@@ -290,7 +291,7 @@ class TestDuckDBBackendComprehensive:
         assert len(result) == 0
         assert result.schema.names == ["id", "name"]
 
-    def test_execute_query_with_complex_types(self):
+    def test_execute_query_with_complex_types(self) -> None:
         """Test execute_query with DuckDB-specific complex types."""
         backend = DuckDBBackend(self.config)
 
@@ -318,14 +319,14 @@ class TestDuckDBBackendComprehensive:
         assert len(result) == 1
         # Complex types should be handled correctly by Arrow integration
 
-    def test_execute_query_with_error(self):
+    def test_execute_query_with_error(self) -> None:
         """Test execute_query with invalid SQL raises exception."""
         backend = DuckDBBackend(self.config)
 
         with pytest.raises(Exception):
             backend.execute_query("SELECT FROM invalid_table")
 
-    def test_execute_update_insert(self):
+    def test_execute_update_insert(self) -> None:
         """Test execute_update with INSERT statement."""
         backend = DuckDBBackend(self.config)
 
@@ -341,7 +342,7 @@ class TestDuckDBBackendComprehensive:
         result = backend.execute_query("SELECT COUNT(*) as count FROM update_test")
         assert result.to_pylist()[0]["count"] == 1
 
-    def test_execute_update_update_statement(self):
+    def test_execute_update_update_statement(self) -> None:
         """Test execute_update with UPDATE statement."""
         backend = DuckDBBackend(self.config)
 
@@ -359,7 +360,7 @@ class TestDuckDBBackendComprehensive:
         result = backend.execute_query("SELECT value FROM update_test WHERE id = 1")
         assert result.to_pylist()[0]["value"] == 20
 
-    def test_execute_update_delete_statement(self):
+    def test_execute_update_delete_statement(self) -> None:
         """Test execute_update with DELETE statement."""
         backend = DuckDBBackend(self.config)
 
@@ -379,7 +380,7 @@ class TestDuckDBBackendComprehensive:
         result = backend.execute_query("SELECT COUNT(*) as count FROM delete_test")
         assert result.to_pylist()[0]["count"] == 2
 
-    def test_execute_update_no_rows_affected(self):
+    def test_execute_update_no_rows_affected(self) -> None:
         """Test execute_update when no rows are affected."""
         backend = DuckDBBackend(self.config)
 
@@ -392,14 +393,14 @@ class TestDuckDBBackendComprehensive:
 
         assert affected_rows == 0
 
-    def test_execute_update_with_error(self):
+    def test_execute_update_with_error(self) -> None:
         """Test execute_update with invalid SQL raises exception."""
         backend = DuckDBBackend(self.config)
 
         with pytest.raises(Exception):
             backend.execute_update("UPDATE nonexistent_table SET col = 1")
 
-    def test_get_statement_schema_simple_query(self):
+    def test_get_statement_schema_simple_query(self) -> None:
         """Test get_statement_schema with simple query."""
         backend = DuckDBBackend(self.config)
 
@@ -413,7 +414,7 @@ class TestDuckDBBackendComprehensive:
         assert isinstance(schema, pa.Schema)
         assert schema.names == ["name", "age"]
 
-    def test_get_statement_schema_complex_query(self):
+    def test_get_statement_schema_complex_query(self) -> None:
         """Test get_statement_schema with complex query."""
         backend = DuckDBBackend(self.config)
 
@@ -433,7 +434,7 @@ class TestDuckDBBackendComprehensive:
         assert isinstance(schema, pa.Schema)
         assert schema.names == ["name", "order_count", "total_amount"]
 
-    def test_get_statement_schema_with_error(self):
+    def test_get_statement_schema_with_error(self) -> None:
         """Test get_statement_schema with invalid query returns empty schema."""
         backend = DuckDBBackend(self.config)
 
@@ -445,7 +446,7 @@ class TestDuckDBBackendComprehensive:
         assert isinstance(schema, pa.Schema)
         assert len(schema) == 0  # Should return empty schema for errors
 
-    def test_get_catalogs(self):
+    def test_get_catalogs(self) -> None:
         """Test get_catalogs method."""
         backend = DuckDBBackend(self.config)
 
@@ -460,7 +461,7 @@ class TestDuckDBBackendComprehensive:
         assert "system" in catalog_names
         assert "temp" in catalog_names
 
-    def test_get_db_schemas(self):
+    def test_get_db_schemas(self) -> None:
         """Test get_db_schemas method."""
         backend = DuckDBBackend(self.config)
 
@@ -475,7 +476,7 @@ class TestDuckDBBackendComprehensive:
         schema_names = [row["db_schema_name"] for row in data]
         assert "main" in schema_names
 
-    def test_get_db_schemas_with_catalog_filter(self):
+    def test_get_db_schemas_with_catalog_filter(self) -> None:
         """Test get_db_schemas with catalog filter."""
         backend = DuckDBBackend(self.config)
 
@@ -488,7 +489,7 @@ class TestDuckDBBackendComprehensive:
         for row in data:
             assert row["catalog_name"] == "temp"
 
-    def test_get_tables(self):
+    def test_get_tables(self) -> None:
         """Test get_tables method."""
         backend = DuckDBBackend(self.config)
 
@@ -516,7 +517,7 @@ class TestDuckDBBackendComprehensive:
         assert "test_table2" in table_names
         assert "test_view" in table_names
 
-    def test_get_tables_with_filters(self):
+    def test_get_tables_with_filters(self) -> None:
         """Test get_tables with various filters."""
         backend = DuckDBBackend(self.config)
 
@@ -539,7 +540,7 @@ class TestDuckDBBackendComprehensive:
         table_types = result.column("table_type").to_pylist()
         assert all(t == "VIEW" for t in table_types)
 
-    def test_get_columns(self):
+    def test_get_columns(self) -> None:
         """Test get_columns method."""
         backend = DuckDBBackend(self.config)
 
@@ -610,7 +611,7 @@ class TestDuckDBBackendComprehensive:
             assert isinstance(result, pa.Table)
             assert result.schema.names == expected_columns
 
-    def test_get_columns_with_filters(self):
+    def test_get_columns_with_filters(self) -> None:
         """Test get_columns with various filters."""
         backend = DuckDBBackend(self.config)
 
@@ -634,7 +635,7 @@ class TestDuckDBBackendComprehensive:
         column_names = [row["column_name"] for row in data]
         assert all("id" in name for name in column_names)
 
-    def test_get_sql_info(self):
+    def test_get_sql_info(self) -> None:
         """Test get_sql_info method."""
         backend = DuckDBBackend(self.config)
 
@@ -656,7 +657,7 @@ class TestDuckDBBackendComprehensive:
         # Should have entries for all requested codes
         assert len(set(info_names)) == len(info_codes)
 
-    def test_arrow_integration(self):
+    def test_arrow_integration(self) -> None:
         """Test that DuckDB properly integrates with Arrow types."""
         backend = DuckDBBackend(self.config)
 
@@ -700,7 +701,7 @@ class TestDuckDBBackendComprehensive:
         assert schema.field("bool_col").type == pa.bool_()
         # Date and timestamp types may vary based on DuckDB version
 
-    def test_performance_large_dataset(self):
+    def test_performance_large_dataset(self) -> None:
         """Test performance with a larger dataset."""
         backend = DuckDBBackend(self.config)
 
@@ -733,7 +734,7 @@ class TestDuckDBBackendComprehensive:
         total_users = sum(row["user_count"] for row in data)
         assert total_users == 10000
 
-    def test_duckdb_specific_functions(self):
+    def test_duckdb_specific_functions(self) -> None:
         """Test DuckDB-specific SQL functions."""
         backend = DuckDBBackend(self.config)
 
@@ -776,7 +777,7 @@ class TestDuckDBBackendComprehensive:
         # Should have logged the error
         mock_logger.error.assert_called()
 
-    def test_cleanup_and_close(self):
+    def test_cleanup_and_close(self) -> None:
         """Test that connections can be properly closed."""
         backend = DuckDBBackend(self.config)
 
@@ -791,7 +792,7 @@ class TestDuckDBBackendComprehensive:
         with pytest.raises(Exception):
             backend.execute_query("SELECT * FROM cleanup_test")
 
-    def test_concurrent_access(self):
+    def test_concurrent_access(self) -> None:
         """Test concurrent access to DuckDB backend."""
         # DuckDB may have issues with concurrent access from multiple threads
         # Let's use a simpler test that doesn't stress the connection as much

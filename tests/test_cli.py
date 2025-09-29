@@ -20,24 +20,24 @@ from mpzsql import cli
 class TestValidationFunctions:
     """Test validation functions."""
 
-    def test_validate_backend_valid(self):
+    def test_validate_backend_valid(self) -> None:
         """Test validate_backend with valid backends."""
         assert cli.validate_backend("duckdb") == "duckdb"
         assert cli.validate_backend("sqlite") == "sqlite"
 
-    def test_validate_backend_invalid(self):
+    def test_validate_backend_invalid(self) -> None:
         """Test validate_backend with invalid backend."""
         with pytest.raises(typer.BadParameter, match="Backend must be"):
             cli.validate_backend("invalid")
 
-    def test_validate_tls_files_both_provided(self):
+    def test_validate_tls_files_both_provided(self) -> None:
         """Test validate_tls_files when both cert and key are provided."""
         with patch("pathlib.Path.exists", return_value=True):
             cert, key = cli.validate_tls_files("cert.pem", "key.pem")
             assert cert == "cert.pem"
             assert key == "key.pem"
 
-    def test_validate_tls_files_cert_not_found(self):
+    def test_validate_tls_files_cert_not_found(self) -> None:
         """Test validate_tls_files when cert file doesn't exist."""
         with patch("pathlib.Path.exists", return_value=False):
             with pytest.raises(
@@ -45,52 +45,52 @@ class TestValidationFunctions:
             ):
                 cli.validate_tls_files("cert.pem", "key.pem")
 
-    def test_validate_tls_files_key_not_found(self):
+    def test_validate_tls_files_key_not_found(self) -> None:
         """Test validate_tls_files when key file doesn't exist."""
         with patch("pathlib.Path.exists", side_effect=[True, False]):
             with pytest.raises(typer.BadParameter, match="TLS key file not found"):
                 cli.validate_tls_files("cert.pem", "key.pem")
 
-    def test_validate_tls_files_only_cert_provided(self):
+    def test_validate_tls_files_only_cert_provided(self) -> None:
         """Test validate_tls_files when only cert is provided."""
         with pytest.raises(
             typer.BadParameter, match="Both --tls-cert and --tls-key must be provided"
         ):
             cli.validate_tls_files("cert.pem", None)
 
-    def test_validate_tls_files_only_key_provided(self):
+    def test_validate_tls_files_only_key_provided(self) -> None:
         """Test validate_tls_files when only key is provided."""
         with pytest.raises(
             typer.BadParameter, match="Both --tls-cert and --tls-key must be provided"
         ):
             cli.validate_tls_files(None, "key.pem")
 
-    def test_validate_tls_files_none_provided(self):
+    def test_validate_tls_files_none_provided(self) -> None:
         """Test validate_tls_files when neither cert nor key are provided."""
         cert, key = cli.validate_tls_files(None, None)
         assert cert is None
         assert key is None
 
-    def test_load_init_sql_from_string(self):
+    def test_load_init_sql_from_string(self) -> None:
         """Test load_init_sql with inline SQL string."""
         sql = "CREATE TABLE test (id INT);"
         result = cli.load_init_sql(sql, None)
         assert result == sql
 
-    def test_load_init_sql_from_file(self):
+    def test_load_init_sql_from_file(self) -> None:
         """Test load_init_sql from file."""
         sql_content = "CREATE TABLE test (id INT);"
         with patch("pathlib.Path.read_text", return_value=sql_content):
             result = cli.load_init_sql(None, "test.sql")
             assert result == sql_content
 
-    def test_load_init_sql_file_not_found(self):
+    def test_load_init_sql_file_not_found(self) -> None:
         """Test load_init_sql when file doesn't exist."""
         with patch("pathlib.Path.read_text", side_effect=FileNotFoundError()):
             with pytest.raises(typer.BadParameter, match="Init SQL file not found"):
                 cli.load_init_sql(None, "missing.sql")
 
-    def test_load_init_sql_file_read_error(self):
+    def test_load_init_sql_file_read_error(self) -> None:
         """Test load_init_sql when file read fails."""
         with patch(
             "pathlib.Path.read_text", side_effect=PermissionError("Access denied")
@@ -98,7 +98,7 @@ class TestValidationFunctions:
             with pytest.raises(typer.BadParameter, match="Error reading init SQL file"):
                 cli.load_init_sql(None, "test.sql")
 
-    def test_load_init_sql_none(self):
+    def test_load_init_sql_none(self) -> None:
         """Test load_init_sql when neither string nor file provided."""
         result = cli.load_init_sql(None, None)
         assert result is None
@@ -669,7 +669,7 @@ class TestPrintStartupBanner:
 class TestMainFunction:
     """Test the main CLI function."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.runner = CliRunner()
 
@@ -1141,7 +1141,7 @@ class TestMainFunction:
 class TestImportFallback:
     """Test import fallback mechanisms."""
 
-    def test_import_fallback_coverage(self):
+    def test_import_fallback_coverage(self) -> None:
         """Test import fallback mechanism for development environments."""
         # This test is mainly for coverage of the ImportError branch
         # In normal testing, imports work fine, but we can at least verify
@@ -1195,7 +1195,7 @@ class TestMainExecution:
         assert 'if __name__ == "__main__":' in source
         assert "app()" in source
 
-    def test_main_execution_not_main(self):
+    def test_main_execution_not_main(self) -> None:
         """Test that __main__ block doesn't execute when imported."""
         # When imported (not run as main), the app() should not be called
         # This is the normal case when running tests
@@ -1211,7 +1211,7 @@ class TestMainExecution:
 class TestCLIEdgeCases:
     """Test edge cases and error conditions."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.runner = CliRunner()
 

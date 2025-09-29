@@ -5,6 +5,7 @@ Tests for mpzsql.auth module providing JWT-based authentication.
 
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import patch
 
 import jwt
@@ -15,7 +16,7 @@ from mpzsql.auth import AuthManager, BearerAuthServerMiddleware
 class TestAuthManager:
     """Test cases for AuthManager class."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test environment."""
         self.secret_key = "test-secret-key"
         self.auth_manager = AuthManager(
@@ -23,18 +24,18 @@ class TestAuthManager:
         )
         self.test_username = "testuser"
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test AuthManager initialization."""
         assert self.auth_manager.secret_key == self.secret_key
         assert self.auth_manager.token_expiry_hours == 24
         assert self.auth_manager.sessions == {}
 
-    def test_initialization_with_custom_expiry(self):
+    def test_initialization_with_custom_expiry(self) -> None:
         """Test AuthManager initialization with custom expiry."""
         auth_manager = AuthManager(secret_key="key", token_expiry_hours=12)
         assert auth_manager.token_expiry_hours == 12
 
-    def test_create_token_success(self):
+    def test_create_token_success(self) -> None:
         """Test successful token creation."""
         token = self.auth_manager.create_token(self.test_username)
 
@@ -58,7 +59,7 @@ class TestAuthManager:
         assert "last_activity" in session
         assert session["transactions"] == []
 
-    def test_create_token_multiple_users(self):
+    def test_create_token_multiple_users(self) -> None:
         """Test creating tokens for multiple users."""
         user1 = "user1"
         user2 = "user2"
@@ -80,7 +81,7 @@ class TestAuthManager:
         assert payload2["username"] == user2
         assert payload1["session_id"] != payload2["session_id"]
 
-    def test_validate_token_success(self):
+    def test_validate_token_success(self) -> None:
         """Test successful token validation."""
         token = self.auth_manager.create_token(self.test_username)
 
@@ -90,7 +91,7 @@ class TestAuthManager:
         assert payload["username"] == self.test_username
         assert "session_id" in payload
 
-    def test_validate_token_with_bearer_prefix(self):
+    def test_validate_token_with_bearer_prefix(self) -> None:
         """Test token validation with Bearer prefix."""
         token = self.auth_manager.create_token(self.test_username)
         bearer_token = f"Bearer {token}"
@@ -100,7 +101,7 @@ class TestAuthManager:
         assert payload is not None
         assert payload["username"] == self.test_username
 
-    def test_validate_token_expired(self):
+    def test_validate_token_expired(self) -> None:
         """Test validation of expired token."""
         # Create auth manager with 0 hour expiry
         auth_manager = AuthManager(secret_key=self.secret_key, token_expiry_hours=0)
@@ -115,7 +116,7 @@ class TestAuthManager:
         payload = self.auth_manager.validate_token(token)
         assert payload is None
 
-    def test_validate_token_invalid_signature(self):
+    def test_validate_token_invalid_signature(self) -> None:
         """Test validation of token with invalid signature."""
         token = self.auth_manager.create_token(self.test_username)
 
@@ -125,7 +126,7 @@ class TestAuthManager:
         payload = different_auth.validate_token(token)
         assert payload is None
 
-    def test_validate_token_malformed(self):
+    def test_validate_token_malformed(self) -> None:
         """Test validation of malformed token."""
         malformed_tokens = [
             "invalid.token.format",
@@ -138,7 +139,7 @@ class TestAuthManager:
             payload = self.auth_manager.validate_token(token)
             assert payload is None
 
-    def test_validate_token_updates_last_activity(self):
+    def test_validate_token_updates_last_activity(self) -> None:
         """Test that token validation updates last activity."""
         token = self.auth_manager.create_token(self.test_username)
 
@@ -159,7 +160,7 @@ class TestAuthManager:
             assert updated_activity == future_time
             assert updated_activity != original_activity
 
-    def test_validate_token_nonexistent_session(self):
+    def test_validate_token_nonexistent_session(self) -> None:
         """Test validation of token with session that was manually removed."""
         token = self.auth_manager.create_token(self.test_username)
 
@@ -171,7 +172,7 @@ class TestAuthManager:
         assert payload is not None
         assert payload["username"] == self.test_username
 
-    def test_get_session_exists(self):
+    def test_get_session_exists(self) -> None:
         """Test getting existing session."""
         token = self.auth_manager.create_token(self.test_username)
         payload = jwt.decode(token, self.secret_key, algorithms=["HS256"])
@@ -185,7 +186,7 @@ class TestAuthManager:
         assert "last_activity" in session
         assert session["transactions"] == []
 
-    def test_get_session_not_exists(self):
+    def test_get_session_not_exists(self) -> None:
         """Test getting non-existent session."""
         fake_session_id = str(uuid.uuid4())
 
@@ -193,7 +194,7 @@ class TestAuthManager:
 
         assert session is None
 
-    def test_cleanup_expired_sessions(self):
+    def test_cleanup_expired_sessions(self) -> None:
         """Test cleanup of expired sessions."""
         # Create multiple tokens
         token1 = self.auth_manager.create_token("user1")
@@ -220,7 +221,7 @@ class TestAuthManager:
         assert payload1["session_id"] not in self.auth_manager.sessions
         assert payload2["session_id"] not in self.auth_manager.sessions
 
-    def test_cleanup_expired_sessions_none_expired(self):
+    def test_cleanup_expired_sessions_none_expired(self) -> None:
         """Test cleanup when no sessions are expired."""
         # Create tokens
         self.auth_manager.create_token("user1")
@@ -234,7 +235,7 @@ class TestAuthManager:
         # Verify no sessions were removed
         assert len(self.auth_manager.sessions) == original_count
 
-    def test_cleanup_expired_sessions_empty(self):
+    def test_cleanup_expired_sessions_empty(self) -> None:
         """Test cleanup with no sessions."""
         # Run cleanup on empty session store
         self.auth_manager.cleanup_expired_sessions()
@@ -246,17 +247,17 @@ class TestAuthManager:
 class TestBearerAuthServerMiddleware:
     """Test cases for BearerAuthServerMiddleware class."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test environment."""
         self.auth_manager = AuthManager(secret_key="test-key")
         self.middleware = BearerAuthServerMiddleware(self.auth_manager)
         self.test_username = "testuser"
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test middleware initialization."""
         assert self.middleware.auth_manager == self.auth_manager
 
-    def test_authenticate_success(self):
+    def test_authenticate_success(self) -> None:
         """Test successful authentication."""
         token = self.auth_manager.create_token(self.test_username)
         headers = {"authorization": f"Bearer {token}"}
@@ -266,15 +267,15 @@ class TestBearerAuthServerMiddleware:
         assert result is not None
         assert result["username"] == self.test_username
 
-    def test_authenticate_no_auth_header(self):
+    def test_authenticate_no_auth_header(self) -> None:
         """Test authentication with no authorization header."""
-        headers = {}
+        headers: dict[str, str] = {}
 
         result = self.middleware.authenticate(headers)
 
         assert result is None
 
-    def test_authenticate_no_bearer_prefix(self):
+    def test_authenticate_no_bearer_prefix(self) -> None:
         """Test authentication with non-Bearer authorization header."""
         headers = {
             "authorization": "Basic dXNlcjpwYXNz"  # user:pass in base64
@@ -284,7 +285,7 @@ class TestBearerAuthServerMiddleware:
 
         assert result is None
 
-    def test_authenticate_invalid_token(self):
+    def test_authenticate_invalid_token(self) -> None:
         """Test authentication with invalid token."""
         headers = {"authorization": "Bearer invalid-token"}
 
@@ -292,7 +293,7 @@ class TestBearerAuthServerMiddleware:
 
         assert result is None
 
-    def test_authenticate_expired_token(self):
+    def test_authenticate_expired_token(self) -> None:
         """Test authentication with expired token."""
         # Create auth manager with 0 hour expiry
         auth_manager = AuthManager(secret_key="test-key", token_expiry_hours=0)
@@ -310,7 +311,7 @@ class TestBearerAuthServerMiddleware:
 
         assert result is None
 
-    def test_authenticate_malformed_bearer_token(self):
+    def test_authenticate_malformed_bearer_token(self) -> None:
         """Test authentication with malformed Bearer token."""
         headers = {
             "authorization": "Bearer "  # Empty token
@@ -320,7 +321,7 @@ class TestBearerAuthServerMiddleware:
 
         assert result is None
 
-    def test_is_authenticated_true(self):
+    def test_is_authenticated_true(self) -> None:
         """Test is_authenticated returns True for valid token."""
         token = self.auth_manager.create_token(self.test_username)
         headers = {"authorization": f"Bearer {token}"}
@@ -329,7 +330,7 @@ class TestBearerAuthServerMiddleware:
 
         assert result is True
 
-    def test_is_authenticated_false(self):
+    def test_is_authenticated_false(self) -> None:
         """Test is_authenticated returns False for invalid token."""
         headers = {"authorization": "Bearer invalid-token"}
 
@@ -337,15 +338,15 @@ class TestBearerAuthServerMiddleware:
 
         assert result is False
 
-    def test_is_authenticated_no_header(self):
+    def test_is_authenticated_no_header(self) -> None:
         """Test is_authenticated returns False with no auth header."""
-        headers = {}
+        headers: dict[str, str] = {}
 
         result = self.middleware.is_authenticated(headers)
 
         assert result is False
 
-    def test_authenticate_case_insensitive_header_key(self):
+    def test_authenticate_case_insensitive_header_key(self) -> None:
         """Test authentication with case variations in header key."""
         token = self.auth_manager.create_token(self.test_username)
 
@@ -370,7 +371,7 @@ class TestBearerAuthServerMiddleware:
 class TestAuthManagerIntegration:
     """Integration tests for AuthManager with real JWT operations."""
 
-    def test_token_roundtrip(self):
+    def test_token_roundtrip(self) -> None:
         """Test complete token creation and validation cycle."""
         auth_manager = AuthManager(secret_key="integration-test-key")
         username = "integration-user"
@@ -391,7 +392,7 @@ class TestAuthManagerIntegration:
         assert session is not None
         assert session["username"] == username
 
-    def test_multiple_token_validation(self):
+    def test_multiple_token_validation(self) -> None:
         """Test validation of multiple tokens from same user."""
         auth_manager = AuthManager(secret_key="multi-test-key")
         username = "multi-user"
@@ -408,7 +409,7 @@ class TestAuthManagerIntegration:
         # Verify multiple sessions exist
         assert len(auth_manager.sessions) == 5
 
-    def test_session_lifecycle(self):
+    def test_session_lifecycle(self) -> None:
         """Test complete session lifecycle."""
         auth_manager = AuthManager(secret_key="lifecycle-test-key")
         username = "lifecycle-user"
@@ -438,7 +439,7 @@ class TestAuthManagerIntegration:
         assert session_final is not None
 
     @patch("mpzsql.auth.logger")
-    def test_logging_integration(self, mock_logger):
+    def test_logging_integration(self, mock_logger: Any) -> None:
         """Test that appropriate logging occurs during operations."""
         auth_manager = AuthManager(secret_key="logging-test-key")
 
@@ -460,13 +461,13 @@ class TestAuthManagerIntegration:
         assert "Cleaned up expired session" in logged_message
         assert session_id in logged_message
 
-    def test_error_handling_edge_cases(self):
+    def test_error_handling_edge_cases(self) -> None:
         """Test error handling for edge cases."""
         auth_manager = AuthManager(secret_key="edge-case-key")
 
         # Test with None values
-        assert auth_manager.validate_token(None) is None
-        assert auth_manager.get_session(None) is None
+        assert auth_manager.validate_token(None) is None  # type: ignore[arg-type]  # Testing edge case with None
+        assert auth_manager.get_session(None) is None  # type: ignore[arg-type]  # Testing edge case with None
 
         # Test with empty strings
         assert auth_manager.validate_token("") is None

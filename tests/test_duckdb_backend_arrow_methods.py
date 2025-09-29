@@ -9,6 +9,7 @@ This test suite covers the new raw Flight do_put functionality:
 - get_table_row_count
 """
 
+from typing import Any
 from unittest.mock import Mock
 
 import pyarrow as pa
@@ -18,7 +19,7 @@ from mpzsql.backends.duckdb_backend import DuckDBBackend
 from mpzsql.config import ServerConfig
 
 
-def create_mock_config(**overrides):
+def create_mock_config(**overrides: Any) -> Mock:
     """Create a properly configured Mock ServerConfig with all required attributes."""
     config = Mock(spec=ServerConfig)
     # Set default values for all required attributes
@@ -49,12 +50,12 @@ def create_mock_config(**overrides):
 class TestDuckDBBackendArrowMethods:
     """Test DuckDB backend Arrow integration methods."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.config = create_mock_config()
         self.backend = DuckDBBackend(self.config)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Clean up after tests."""
         if hasattr(self, "backend"):
             self.backend.close()
@@ -82,7 +83,7 @@ class TestDuckDBBackendArrowMethods:
         }
         return pa.table(data)
 
-    def test_create_table_from_arrow_simple(self):
+    def test_create_table_from_arrow_simple(self) -> None:
         """Test creating a table from Arrow data (batch mode)."""
         arrow_table = self.create_sample_arrow_table()
         table_name = "test_employees"
@@ -107,7 +108,7 @@ class TestDuckDBBackendArrowMethods:
         assert "salary" in schema_result.schema.names
         assert "active" in schema_result.schema.names
 
-    def test_create_table_from_arrow_qualified_name(self):
+    def test_create_table_from_arrow_qualified_name(self) -> None:
         """Test creating a table with schema-qualified name."""
         arrow_table = self.create_sample_arrow_table()
         # Use a simple schema-qualified name that DuckDB can handle
@@ -122,7 +123,7 @@ class TestDuckDBBackendArrowMethods:
         )
         assert result.to_pylist()[0]["count"] == 5
 
-    def test_create_table_from_arrow_appends_to_existing(self):
+    def test_create_table_from_arrow_appends_to_existing(self) -> None:
         """Test that create_table_from_arrow appends to existing tables (new behavior)."""
         arrow_table1 = self.create_sample_arrow_table()
         arrow_table2 = pa.table(
@@ -157,7 +158,7 @@ class TestDuckDBBackendArrowMethods:
         ids = [row["id"] for row in data_result.to_pylist()]
         assert ids == [1, 2, 3, 4, 5, 10, 20]  # All data preserved
 
-    def test_create_table_from_schema_streaming_mode(self):
+    def test_create_table_from_schema_streaming_mode(self) -> None:
         """Test creating an empty table from schema (streaming mode - first chunk)."""
         arrow_table = self.create_sample_arrow_table()
         schema = arrow_table.schema
@@ -179,7 +180,7 @@ class TestDuckDBBackendArrowMethods:
         assert len(schema_result.schema) == 5
         assert schema_result.schema.names == ["id", "name", "age", "salary", "active"]
 
-    def test_append_table_from_arrow_streaming_mode(self):
+    def test_append_table_from_arrow_streaming_mode(self) -> None:
         """Test appending Arrow data to existing table (streaming mode)."""
         # Create initial table
         initial_data = pa.table({"id": [1, 2], "value": [10.0, 20.0]})
@@ -215,7 +216,7 @@ class TestDuckDBBackendArrowMethods:
         assert actual_ids == expected_ids
         assert actual_values == expected_values
 
-    def test_complete_streaming_workflow(self):
+    def test_complete_streaming_workflow(self) -> None:
         """Test complete streaming workflow: schema -> append -> append."""
         # Step 1: Create empty table from schema
         schema = pa.schema(
@@ -273,7 +274,7 @@ class TestDuckDBBackendArrowMethods:
         assert data[0]["batch_id"] == 1 and data[0]["data"] == "A"
         assert data[4]["batch_id"] == 2 and data[4]["data"] == "E"
 
-    def test_get_table_schema(self):
+    def test_get_table_schema(self) -> None:
         """Test retrieving table schema."""
         arrow_table = self.create_sample_arrow_table()
         table_name = "schema_test_table"
@@ -293,7 +294,7 @@ class TestDuckDBBackendArrowMethods:
         assert "salary" in retrieved_schema.names
         assert "active" in retrieved_schema.names
 
-    def test_get_table_row_count(self):
+    def test_get_table_row_count(self) -> None:
         """Test retrieving table row count."""
         arrow_table = self.create_sample_arrow_table()
         table_name = "count_test_table"
@@ -307,7 +308,7 @@ class TestDuckDBBackendArrowMethods:
         # Verify count
         assert row_count == 5
 
-    def test_get_table_row_count_empty_table(self):
+    def test_get_table_row_count_empty_table(self) -> None:
         """Test row count for empty table."""
         schema = pa.schema([pa.field("col1", pa.int64())])
         table_name = "empty_count_table"
@@ -321,7 +322,7 @@ class TestDuckDBBackendArrowMethods:
         # Verify count is 0
         assert row_count == 0
 
-    def test_large_table_performance(self):
+    def test_large_table_performance(self) -> None:
         """Test with larger table to ensure performance is reasonable."""
         large_table = self.create_large_arrow_table(1000)
         table_name = "large_performance_table"
@@ -342,7 +343,7 @@ class TestDuckDBBackendArrowMethods:
             unique_categories == 10
         )  # We create 10 categories in create_large_arrow_table
 
-    def test_error_handling_invalid_table_name(self):
+    def test_error_handling_invalid_table_name(self) -> None:
         """Test error handling for invalid table names."""
         arrow_table = self.create_sample_arrow_table()
 
@@ -350,24 +351,24 @@ class TestDuckDBBackendArrowMethods:
         with pytest.raises(Exception):
             self.backend.create_table_from_arrow("", arrow_table)
 
-    def test_error_handling_nonexistent_table_schema(self):
+    def test_error_handling_nonexistent_table_schema(self) -> None:
         """Test error handling when getting schema of non-existent table."""
         with pytest.raises(Exception):
             self.backend.get_table_schema("nonexistent_table")
 
-    def test_error_handling_nonexistent_table_count(self):
+    def test_error_handling_nonexistent_table_count(self) -> None:
         """Test error handling when getting count of non-existent table."""
         with pytest.raises(Exception):
             self.backend.get_table_row_count("nonexistent_table")
 
-    def test_error_handling_append_to_nonexistent_table(self):
+    def test_error_handling_append_to_nonexistent_table(self) -> None:
         """Test error handling when appending to non-existent table."""
         arrow_table = self.create_sample_arrow_table()
 
         with pytest.raises(Exception):
             self.backend.append_table_from_arrow("nonexistent_table", arrow_table)
 
-    def test_schema_compatibility_append(self):
+    def test_schema_compatibility_append(self) -> None:
         """Test that appending data with different but compatible schema works."""
         # Create initial table
         initial_table = pa.table({"id": [1, 2], "name": ["Alice", "Bob"]})
@@ -382,7 +383,7 @@ class TestDuckDBBackendArrowMethods:
         row_count = self.backend.get_table_row_count(table_name)
         assert row_count == 4
 
-    def test_temporary_table_cleanup(self):
+    def test_temporary_table_cleanup(self) -> None:
         """Test that temporary tables are properly cleaned up."""
         arrow_table = self.create_sample_arrow_table()
         table_name = "cleanup_test_table"
@@ -404,7 +405,7 @@ class TestDuckDBBackendArrowMethods:
         temp_tables = result.to_pylist()
         assert len(temp_tables) == 0, f"Found lingering temporary tables: {temp_tables}"
 
-    def test_concurrent_operations_simulation(self):
+    def test_concurrent_operations_simulation(self) -> None:
         """Test simulation of concurrent operations using unique temp table names."""
         # Simulate multiple concurrent operations by creating multiple tables rapidly
         tables_created = []
@@ -422,7 +423,7 @@ class TestDuckDBBackendArrowMethods:
             row_count = self.backend.get_table_row_count(table_name)
             assert row_count == 1
 
-    def test_complex_data_types(self):
+    def test_complex_data_types(self) -> None:
         """Test with complex Arrow data types."""
         # Create table with various data types
         complex_data = {

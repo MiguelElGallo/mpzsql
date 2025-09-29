@@ -16,11 +16,11 @@ from mpzsql.flightsql.protobuf import FlightSQLProtobuf
 class TestFlightSQLProtobufBasedOnLogs:
     """Test FlightSQL protobuf operations based on real server logs."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.protobuf = FlightSQLProtobuf()
 
-    def test_get_sql_info_schema_generation(self):
+    def test_get_sql_info_schema_generation(self) -> None:
         """Test SQL info schema generation based on real logs."""
         # Based on logs: get_sql_info() returns schema with info_name: uint32, value: string
         schema = self.protobuf.get_sql_info_schema()
@@ -34,7 +34,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert schema.field(1).name == "value"
         assert schema.field(1).type == pa.string()
 
-    def test_get_catalogs_schema_generation(self):
+    def test_get_catalogs_schema_generation(self) -> None:
         """Test catalogs schema generation based on real logs."""
         # Based on logs: get_catalogs() returns schema with catalog_name: string
         schema = self.protobuf.get_catalogs_schema()
@@ -44,7 +44,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert schema.field(0).name == "catalog_name"
         assert schema.field(0).type == pa.string()
 
-    def test_get_db_schemas_schema_generation(self):
+    def test_get_db_schemas_schema_generation(self) -> None:
         """Test DB schemas schema generation based on real logs."""
         # Based on logs: get_db_schemas() returns catalog_name: string, db_schema_name: string
         schema = self.protobuf.get_db_schemas_schema()
@@ -56,7 +56,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert schema.field(1).name == "db_schema_name"
         assert schema.field(1).type == pa.string()
 
-    def test_get_tables_schema_minimal_generation(self):
+    def test_get_tables_schema_minimal_generation(self) -> None:
         """Test tables schema generation for minimal case (without schema)."""
         # Based on logs: get_tables() without include_schema=True returns
         # catalog_name: string, db_schema_name: string, table_name: string, table_type: string
@@ -73,7 +73,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert schema.field(3).name == "table_type"
         assert schema.field(3).type == pa.string()
 
-    def test_get_tables_schema_with_included_schema_generation(self):
+    def test_get_tables_schema_with_included_schema_generation(self) -> None:
         """Test tables schema generation with included schema."""
         # Based on logs: get_tables() with include_schema=True adds table_schema: binary
         schema = self.protobuf.get_tables_schema_with_included_schema()
@@ -95,7 +95,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert schema.field(5).name == "table_schema"
         assert schema.field(5).type == pa.binary()
 
-    def test_parse_command_get_db_schemas_real_data(self):
+    def test_parse_command_get_db_schemas_real_data(self) -> None:
         """Test parsing GetDbSchemas command based on real log data."""
         # From logs: _parse_get_db_schemas: Command value bytes: (hex encoded data)
         # Result: Parsed GetDbSchemas: catalog=my_ducklake, db_schema_filter_pattern=%
@@ -105,7 +105,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert hasattr(self.protobuf, "parse_command_get_db_schemas")
         assert callable(self.protobuf.parse_command_get_db_schemas)
 
-    def test_parse_command_get_tables_real_data(self):
+    def test_parse_command_get_tables_real_data(self) -> None:
         """Test parsing GetTables command based on real log data."""
         # From logs: _parse_get_tables: Command value bytes: 0a0b6d795f6475636b6c616b6512046d61696e1a0125
         # Result: Parsed GetTables: catalog=my_ducklake, db_schema_filter_pattern=main, table_name_filter_pattern=%, table_types=[], include_schema=False
@@ -114,7 +114,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert hasattr(self.protobuf, "parse_command_get_tables")
         assert callable(self.protobuf.parse_command_get_tables)
 
-    def test_command_type_urls_constants(self):
+    def test_command_type_urls_constants(self) -> None:
         """Test that all required command type URLs are defined."""
         # Based on logs showing these command types being processed
         required_urls = [
@@ -132,7 +132,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert isinstance(url_value, str)
             assert "type.googleapis.com" in url_value
 
-    def test_action_type_urls_constants(self):
+    def test_action_type_urls_constants(self) -> None:
         """Test that action type URLs are defined."""
         # Based on logs showing action handling
         action_urls = [
@@ -147,13 +147,13 @@ class TestFlightSQLProtobufBasedOnLogs:
             url_value = getattr(self.protobuf, url_constant)
             assert isinstance(url_value, str)
 
-    def test_get_type_mapping_functionality(self):
+    def test_get_type_mapping_functionality(self) -> None:
         """Test type mapping functionality used in schema generation."""
         # Test that type mapping is available
         assert hasattr(self.protobuf, "get_type_mapping")
         assert callable(self.protobuf.get_type_mapping)
 
-    def test_prepared_statement_functionality(self):
+    def test_prepared_statement_functionality(self) -> None:
         """Test prepared statement related functionality."""
         # Based on logs showing prepared statement methods
         methods = [
@@ -167,7 +167,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert hasattr(self.protobuf, method_name)
             assert callable(getattr(self.protobuf, method_name))
 
-    def test_command_parsing_methods_exist(self):
+    def test_command_parsing_methods_exist(self) -> None:
         """Test that all command parsing methods exist."""
         # Based on logs showing these parsing methods being called
         parsing_methods = [
@@ -183,7 +183,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert hasattr(self.protobuf, method_name)
             assert callable(getattr(self.protobuf, method_name))
 
-    def test_action_result_creation_methods(self):
+    def test_action_result_creation_methods(self) -> None:
         """Test action result creation methods."""
         # Based on logs showing action result creation
         creation_methods = [
@@ -195,7 +195,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert hasattr(self.protobuf, method_name)
             assert callable(getattr(self.protobuf, method_name))
 
-    def test_schema_generation_methods_exist(self):
+    def test_schema_generation_methods_exist(self) -> None:
         """Test that all schema generation methods exist."""
         # Based on the schema types seen in logs
         schema_methods = [
@@ -218,7 +218,7 @@ class TestFlightSQLProtobufBasedOnLogs:
             assert hasattr(self.protobuf, method_name)
             assert callable(getattr(self.protobuf, method_name))
 
-    def test_sql_info_empty_request_handling(self):
+    def test_sql_info_empty_request_handling(self) -> None:
         """Test SQL info schema for empty request based on logs."""
         # From logs: _parse_get_sql_info: Parsed info IDs: []
         # Result: info_name: [[]], value: [[]] (empty table)
@@ -241,7 +241,7 @@ class TestFlightSQLProtobufBasedOnLogs:
         assert isinstance(schema, pa.Schema)
         # The actual logging calls would depend on implementation details
 
-    def test_tables_schema_variations(self):
+    def test_tables_schema_variations(self) -> None:
         """Test different table schema variations based on include_schema parameter."""
         # Test both variations as seen in logs
 
@@ -267,11 +267,11 @@ class TestFlightSQLProtobufBasedOnLogs:
 class TestFlightSQLProtobufCommandParsing:
     """Test command parsing functionality based on real server data."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.protobuf = FlightSQLProtobuf()
 
-    def test_real_get_tables_command_structure(self):
+    def test_real_get_tables_command_structure(self) -> None:
         """Test GetTables command structure based on real logs."""
         # From logs we see two different GetTables calls:
         # 1. catalog=my_ducklake, db_schema_filter_pattern=main, table_name_filter_pattern=%, include_schema=False
@@ -281,12 +281,12 @@ class TestFlightSQLProtobufCommandParsing:
         # (This would require actual protobuf bytes to test fully)
         assert hasattr(self.protobuf, "parse_command_get_tables")
 
-    def test_real_get_db_schemas_command_structure(self):
+    def test_real_get_db_schemas_command_structure(self) -> None:
         """Test GetDbSchemas command structure based on real logs."""
         # From logs: catalog=my_ducklake, db_schema_filter_pattern=%
         assert hasattr(self.protobuf, "parse_command_get_db_schemas")
 
-    def test_command_type_url_parsing(self):
+    def test_command_type_url_parsing(self) -> None:
         """Test that command type URLs match log expectations."""
         # From logs we see these specific type URLs being parsed
         expected_command_types = [
@@ -304,7 +304,7 @@ class TestFlightSQLProtobufCommandParsing:
         )
         assert self.protobuf.COMMAND_GET_TABLES_TYPE_URL in expected_command_types[3]
 
-    def test_binary_data_handling(self):
+    def test_binary_data_handling(self) -> None:
         """Test handling of binary data as seen in table_schema field."""
         # From logs: table_schema: [[FFFFFFFFA80000001000000000000A000C000600050008000A000000000104000C0000000800080000000400080000000400 (... 268 chars omitted)]]
 

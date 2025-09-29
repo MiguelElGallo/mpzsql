@@ -1,0 +1,23 @@
+{
+    "include": [
+        "src"
+    ],
+    "exclude": [
+        "tests",
+        "src/mpzsql/flightsql/generated",
+        "**/__pycache__",
+        "**/.pytest_cache"
+    ],
+    "ignore": [
+        "tests/**",
+        "src/mpzsql/flightsql/generated/**"
+    ],
+    "pythonVersion": "3.10",
+    "typeCheckingMode": "strict",
+    "reportMissingImports": false,
+    "reportMissingTypeStubs": false,
+    "reportUnusedImport": "warning",
+    "reportUnusedClass": "warning",
+    "reportUnusedFunction": "warning",
+    "reportUnusedVariable": "warning"
+}

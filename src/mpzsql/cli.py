@@ -168,6 +168,28 @@ class AzureCredentialManager:
         if not self._duckdb_connection or not self._server_config:
             return
 
+        # Validate required PostgreSQL parameters
+        if self._server_config.postgresql_server is None:
+            console.print(
+                "[yellow]⚠️  PostgreSQL server not configured, skipping secret refresh[/yellow]"
+            )
+            return
+        if self._server_config.postgresql_port is None:
+            console.print(
+                "[yellow]⚠️  PostgreSQL port not configured, skipping secret refresh[/yellow]"
+            )
+            return
+        if self._server_config.postgresql_user is None:
+            console.print(
+                "[yellow]⚠️  PostgreSQL user not configured, skipping secret refresh[/yellow]"
+            )
+            return
+        if self._server_config.postgresql_catalogdb is None:
+            console.print(
+                "[yellow]⚠️  PostgreSQL catalog database not configured, skipping secret refresh[/yellow]"
+            )
+            return
+
         try:
             console.print("[blue]🔄 Refreshing PostgreSQL secret in DuckDB...[/blue]")
 
@@ -739,6 +761,13 @@ def validate_azure_storage_connection(config: ServerConfig) -> bool:
         blob_service_client = BlobServiceClient(
             account_url=account_url, credential=credential
         )
+
+        # Ensure container name is not None
+        if config.azure_storage_container is None:
+            raise ValueError(
+                "Azure storage container name is required but not provided"
+            )
+
         container_client = blob_service_client.get_container_client(
             config.azure_storage_container
         )
@@ -1123,6 +1152,7 @@ def main(
 
     # Environment variable fallbacks
     hostname = hostname or os.getenv("MPZSQL_HOSTNAME", "localhost")
+    assert hostname is not None  # This should never be None due to default value
 
     # Advertised hostname with Azure Web Apps support
     # Priority: CLI option > MPZSQL_ADVERTISED_HOSTNAME > WEBSITE_HOSTNAME > hostname
@@ -1338,6 +1368,12 @@ async def initialize_duckdb_with_azure(
     try:
         # Setup Azure filesystem
         async with DefaultAzureCredentialAsync() as credential:
+            # Ensure account name is not None
+            if config.azure_storage_account is None:
+                raise ValueError(
+                    "Azure storage account name is required but not provided"
+                )
+
             az_fs = await setup_azure_filesystem(
                 config.azure_storage_account, credential
             )
@@ -1384,7 +1420,25 @@ async def initialize_duckdb_with_azure(
                         # Register DuckDB connection with credential manager for automatic refresh
                         _azure_credential_manager.set_duckdb_connection(con, config)
                     else:
+                        if config.postgresql_password is None:
+                            raise ValueError(
+                                "PostgreSQL password is required but not provided"
+                            )
                         pg_password = config.postgresql_password
+
+                    # Validate required PostgreSQL parameters
+                    if config.postgresql_server is None:
+                        raise ValueError(
+                            "PostgreSQL server is required but not provided"
+                        )
+                    if config.postgresql_port is None:
+                        raise ValueError("PostgreSQL port is required but not provided")
+                    if config.postgresql_user is None:
+                        raise ValueError("PostgreSQL user is required but not provided")
+                    if config.postgresql_catalogdb is None:
+                        raise ValueError(
+                            "PostgreSQL catalog database is required but not provided"
+                        )
 
                     pg_secret_sql = create_duckdb_postgresql_secret_sql(
                         host=config.postgresql_server,

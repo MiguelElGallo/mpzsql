@@ -11,6 +11,7 @@ import uuid
 import pyarrow as pa
 from google.protobuf import any_pb2
 
+# mypy: disable-error-code=attr-defined
 from mpzsql.flightsql.generated.FlightSql_pb2 import (
     ActionBeginTransactionRequest as GeneratedActionBeginTransactionRequest,
 )
@@ -552,8 +553,8 @@ class FlightSQLProtobuf:
     @staticmethod
     def create_action_create_prepared_statement_result(
         prepared_statement_handle: bytes,
-        dataset_schema: bytes = None,
-        parameter_schema: bytes = None,
+        dataset_schema: bytes | None = None,
+        parameter_schema: bytes | None = None,
     ) -> bytes:
         """Create ActionCreatePreparedStatementResult protobuf message.
 

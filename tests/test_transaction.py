@@ -14,13 +14,13 @@ from mpzsql.transaction import Transaction, TransactionManager, TransactionState
 class TestTransactionState:
     """Test cases for TransactionState enum."""
 
-    def test_transaction_states(self):
+    def test_transaction_states(self) -> None:
         """Test that all expected transaction states exist."""
         assert TransactionState.ACTIVE.value == "ACTIVE"
         assert TransactionState.COMMITTED.value == "COMMITTED"
         assert TransactionState.ROLLED_BACK.value == "ROLLED_BACK"
 
-    def test_transaction_state_values(self):
+    def test_transaction_state_values(self) -> None:
         """Test transaction state values are correct."""
         states = [state.value for state in TransactionState]
         expected_states = ["ACTIVE", "COMMITTED", "ROLLED_BACK"]
@@ -30,7 +30,7 @@ class TestTransactionState:
 class TestTransaction:
     """Test cases for Transaction class."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test environment."""
         self.transaction_id = "txn_test123"
         self.session_id = "session_456"
@@ -42,7 +42,7 @@ class TestTransaction:
             connection=self.mock_connection,
         )
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test Transaction initialization."""
         assert self.transaction.transaction_id == self.transaction_id
         assert self.transaction.session_id == self.session_id
@@ -51,7 +51,7 @@ class TestTransaction:
         assert isinstance(self.transaction.created_at, datetime)
         assert self.transaction.statements == []
 
-    def test_add_statement(self):
+    def test_add_statement(self) -> None:
         """Test adding statements to transaction."""
         statement1 = "SELECT * FROM users"
         statement2 = "INSERT INTO logs VALUES (1, 'test')"
@@ -68,14 +68,14 @@ class TestTransaction:
         assert "timestamp" in self.transaction.statements[1]
         assert isinstance(self.transaction.statements[0]["timestamp"], datetime)
 
-    def test_commit_success(self):
+    def test_commit_success(self) -> None:
         """Test successful transaction commit."""
         self.transaction.commit()
 
         self.mock_connection.commit.assert_called_once()
         assert self.transaction.state == TransactionState.COMMITTED
 
-    def test_commit_already_committed(self):
+    def test_commit_already_committed(self) -> None:
         """Test committing an already committed transaction."""
         self.transaction.state = TransactionState.COMMITTED
 
@@ -87,7 +87,7 @@ class TestTransaction:
 
         self.mock_connection.commit.assert_not_called()
 
-    def test_commit_already_rolled_back(self):
+    def test_commit_already_rolled_back(self) -> None:
         """Test committing a rolled back transaction."""
         self.transaction.state = TransactionState.ROLLED_BACK
 
@@ -99,7 +99,7 @@ class TestTransaction:
 
         self.mock_connection.commit.assert_not_called()
 
-    def test_commit_connection_error(self):
+    def test_commit_connection_error(self) -> None:
         """Test commit with connection error."""
         self.mock_connection.commit.side_effect = Exception("Database error")
 
@@ -109,14 +109,14 @@ class TestTransaction:
         # State should remain ACTIVE after failed commit
         assert self.transaction.state == TransactionState.ACTIVE
 
-    def test_rollback_success(self):
+    def test_rollback_success(self) -> None:
         """Test successful transaction rollback."""
         self.transaction.rollback()
 
         self.mock_connection.rollback.assert_called_once()
         assert self.transaction.state == TransactionState.ROLLED_BACK
 
-    def test_rollback_already_committed(self):
+    def test_rollback_already_committed(self) -> None:
         """Test rolling back a committed transaction."""
         self.transaction.state = TransactionState.COMMITTED
 
@@ -128,7 +128,7 @@ class TestTransaction:
 
         self.mock_connection.rollback.assert_not_called()
 
-    def test_rollback_already_rolled_back(self):
+    def test_rollback_already_rolled_back(self) -> None:
         """Test rolling back an already rolled back transaction."""
         self.transaction.state = TransactionState.ROLLED_BACK
 
@@ -140,7 +140,7 @@ class TestTransaction:
 
         self.mock_connection.rollback.assert_not_called()
 
-    def test_rollback_connection_error(self):
+    def test_rollback_connection_error(self) -> None:
         """Test rollback with connection error."""
         self.mock_connection.rollback.side_effect = Exception("Database error")
 
@@ -150,7 +150,7 @@ class TestTransaction:
         # State should remain ACTIVE after failed rollback
         assert self.transaction.state == TransactionState.ACTIVE
 
-    def test_transaction_with_statements(self):
+    def test_transaction_with_statements(self) -> None:
         """Test transaction with multiple statements."""
         statements = [
             "BEGIN",
@@ -169,7 +169,7 @@ class TestTransaction:
             assert self.transaction.statements[i]["statement"] == stmt
             assert isinstance(self.transaction.statements[i]["timestamp"], datetime)
 
-    def test_created_at_timestamp(self):
+    def test_created_at_timestamp(self) -> None:
         """Test that created_at timestamp is recent."""
         creation_time = datetime.now(timezone.utc)
         transaction = Transaction("txn_test", "session_test", Mock())
@@ -182,18 +182,18 @@ class TestTransaction:
 class TestTransactionManager:
     """Test cases for TransactionManager class."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test environment."""
         self.manager = TransactionManager()
         self.mock_connection = Mock()
         self.session_id = "test_session_123"
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         """Test TransactionManager initialization."""
         assert isinstance(self.manager.transactions, dict)
         assert len(self.manager.transactions) == 0
 
-    def test_begin_transaction(self):
+    def test_begin_transaction(self) -> None:
         """Test beginning a new transaction."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -213,7 +213,7 @@ class TestTransactionManager:
         assert transaction.connection == self.mock_connection
         assert transaction.state == TransactionState.ACTIVE
 
-    def test_begin_multiple_transactions(self):
+    def test_begin_multiple_transactions(self) -> None:
         """Test beginning multiple transactions."""
         session1 = "session_1"
         session2 = "session_2"
@@ -229,7 +229,7 @@ class TestTransactionManager:
         assert self.manager.transactions[txn_id1].session_id == session1
         assert self.manager.transactions[txn_id2].session_id == session2
 
-    def test_get_transaction_exists(self):
+    def test_get_transaction_exists(self) -> None:
         """Test getting an existing transaction."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -241,7 +241,7 @@ class TestTransactionManager:
         assert retrieved.transaction_id == transaction_id
         assert retrieved.session_id == self.session_id
 
-    def test_get_transaction_not_exists(self):
+    def test_get_transaction_not_exists(self) -> None:
         """Test getting a non-existent transaction."""
         fake_id = "txn_nonexistent123"
 
@@ -249,7 +249,7 @@ class TestTransactionManager:
 
         assert retrieved is None
 
-    def test_end_transaction_commit(self):
+    def test_end_transaction_commit(self) -> None:
         """Test ending transaction with commit action."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -264,7 +264,7 @@ class TestTransactionManager:
         # Transaction should be removed from active transactions
         assert transaction_id not in self.manager.transactions
 
-    def test_end_transaction_rollback(self):
+    def test_end_transaction_rollback(self) -> None:
         """Test ending transaction with rollback action."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -279,7 +279,7 @@ class TestTransactionManager:
         # Transaction should be removed from active transactions
         assert transaction_id not in self.manager.transactions
 
-    def test_end_transaction_unknown_action(self):
+    def test_end_transaction_unknown_action(self) -> None:
         """Test ending transaction with unknown action."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -293,7 +293,7 @@ class TestTransactionManager:
         # Transaction should still exist since operation failed
         assert transaction_id in self.manager.transactions
 
-    def test_end_transaction_not_exists(self):
+    def test_end_transaction_not_exists(self) -> None:
         """Test ending a non-existent transaction."""
         fake_id = "txn_nonexistent123"
 
@@ -301,7 +301,7 @@ class TestTransactionManager:
 
         assert result is False
 
-    def test_end_transaction_commit_error(self):
+    def test_end_transaction_commit_error(self) -> None:
         """Test ending transaction when commit fails."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -315,7 +315,7 @@ class TestTransactionManager:
         # Transaction should still exist since operation failed
         assert transaction_id in self.manager.transactions
 
-    def test_end_transaction_rollback_error(self):
+    def test_end_transaction_rollback_error(self) -> None:
         """Test ending transaction when rollback fails."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -329,7 +329,7 @@ class TestTransactionManager:
         # Transaction should still exist since operation failed
         assert transaction_id in self.manager.transactions
 
-    def test_cleanup_abandoned_transactions_none_abandoned(self):
+    def test_cleanup_abandoned_transactions_none_abandoned(self) -> None:
         """Test cleanup when no transactions are abandoned."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -341,7 +341,7 @@ class TestTransactionManager:
         # Recent transaction should not be cleaned up
         assert transaction_id in self.manager.transactions
 
-    def test_cleanup_abandoned_transactions_with_abandoned(self):
+    def test_cleanup_abandoned_transactions_with_abandoned(self) -> None:
         """Test cleanup with abandoned transactions."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -358,7 +358,7 @@ class TestTransactionManager:
         assert transaction_id not in self.manager.transactions
         self.mock_connection.rollback.assert_called()
 
-    def test_cleanup_abandoned_transactions_custom_timeout(self):
+    def test_cleanup_abandoned_transactions_custom_timeout(self) -> None:
         """Test cleanup with custom timeout."""
         transaction_id = self.manager.begin_transaction(
             self.session_id, self.mock_connection
@@ -383,7 +383,7 @@ class TestTransactionManager:
         self.manager.cleanup_abandoned_transactions(timeout_minutes=30)
         assert transaction_id2 in self.manager.transactions
 
-    def test_cleanup_abandoned_transactions_multiple(self):
+    def test_cleanup_abandoned_transactions_multiple(self) -> None:
         """Test cleanup with multiple transactions, some abandoned."""
         # Create multiple transactions with different ages
         txn1 = self.manager.begin_transaction("session1", Mock())
@@ -406,7 +406,7 @@ class TestTransactionManager:
         assert txn2 in self.manager.transactions
         assert txn3 not in self.manager.transactions
 
-    def test_cleanup_abandoned_transactions_empty(self):
+    def test_cleanup_abandoned_transactions_empty(self) -> None:
         """Test cleanup with no transactions."""
         # Should not raise any errors
         self.manager.cleanup_abandoned_transactions()
@@ -448,7 +448,7 @@ class TestTransactionManager:
 
         mock_logger.error.assert_called_with("Unknown transaction action: 99")
 
-    def test_transaction_id_uniqueness(self):
+    def test_transaction_id_uniqueness(self) -> None:
         """Test that transaction IDs are unique."""
         transaction_ids = set()
 
@@ -468,7 +468,7 @@ class TestTransactionManager:
 class TestTransactionIntegration:
     """Integration tests for transaction management."""
 
-    def test_complete_transaction_lifecycle_commit(self):
+    def test_complete_transaction_lifecycle_commit(self) -> None:
         """Test complete transaction lifecycle with commit."""
         manager = TransactionManager()
         connection = Mock()
@@ -491,7 +491,7 @@ class TestTransactionIntegration:
         connection.begin.assert_called_once()
         connection.commit.assert_called_once()
 
-    def test_complete_transaction_lifecycle_rollback(self):
+    def test_complete_transaction_lifecycle_rollback(self) -> None:
         """Test complete transaction lifecycle with rollback."""
         manager = TransactionManager()
         connection = Mock()
@@ -513,7 +513,7 @@ class TestTransactionIntegration:
         connection.begin.assert_called_once()
         connection.rollback.assert_called_once()
 
-    def test_multiple_concurrent_transactions(self):
+    def test_multiple_concurrent_transactions(self) -> None:
         """Test handling multiple concurrent transactions."""
         manager = TransactionManager()
 
@@ -551,7 +551,7 @@ class TestTransactionIntegration:
         # All transactions should be completed
         assert len(manager.transactions) == 0
 
-    def test_transaction_error_handling(self):
+    def test_transaction_error_handling(self) -> None:
         """Test transaction error handling scenarios."""
         manager = TransactionManager()
         connection = Mock()
@@ -572,7 +572,7 @@ class TestTransactionIntegration:
         assert result is True
         assert txn_id not in manager.transactions
 
-    def test_abandoned_transaction_cleanup_integration(self):
+    def test_abandoned_transaction_cleanup_integration(self) -> None:
         """Test complete abandoned transaction cleanup workflow."""
         manager = TransactionManager()
 

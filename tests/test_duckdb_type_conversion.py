@@ -16,7 +16,7 @@ from mpzsql.config import ServerConfig
 class TestDuckDBTypeConversion:
     """Test DuckDB to Arrow type conversion."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures."""
         self.config = Mock(spec=ServerConfig)
         self.config.database = ":memory:"
@@ -25,12 +25,12 @@ class TestDuckDBTypeConversion:
         self.config.print_queries = True
         self.backend = DuckDBBackend(self.config)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Clean up after tests."""
         if hasattr(self, "backend"):
             self.backend.close()
 
-    def test_integer_type_conversions(self):
+    def test_integer_type_conversions(self) -> None:
         """Test conversion of integer types."""
         test_cases = [
             ("TINYINT", pa.int8()),
@@ -48,7 +48,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_floating_point_type_conversions(self):
+    def test_floating_point_type_conversions(self) -> None:
         """Test conversion of floating point types."""
         test_cases = [
             ("REAL", pa.float32()),
@@ -60,7 +60,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_string_type_conversions(self):
+    def test_string_type_conversions(self) -> None:
         """Test conversion of string types."""
         test_cases = [
             ("VARCHAR", pa.string()),
@@ -75,7 +75,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_boolean_type_conversions(self):
+    def test_boolean_type_conversions(self) -> None:
         """Test conversion of boolean types."""
         test_cases = [
             ("BOOLEAN", pa.bool_()),
@@ -86,7 +86,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_datetime_type_conversions(self):
+    def test_datetime_type_conversions(self) -> None:
         """Test conversion of date/time types."""
         test_cases = [
             ("DATE", pa.date32()),
@@ -100,7 +100,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_binary_type_conversions(self):
+    def test_binary_type_conversions(self) -> None:
         """Test conversion of binary types."""
         test_cases = [
             ("BLOB", pa.binary()),
@@ -111,12 +111,12 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_uuid_type_conversion(self):
+    def test_uuid_type_conversion(self) -> None:
         """Test conversion of UUID type."""
         result = self.backend._duckdb_type_to_arrow("UUID")
         assert result == pa.string()  # UUID maps to string in Arrow
 
-    def test_decimal_type_conversions(self):
+    def test_decimal_type_conversions(self) -> None:
         """Test conversion of decimal types."""
         test_cases = [
             ("DECIMAL", pa.decimal128(18, 3)),  # Default precision/scale
@@ -130,7 +130,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_complex_type_conversions(self):
+    def test_complex_type_conversions(self) -> None:
         """Test conversion of complex types."""
         # LIST type
         result = self.backend._duckdb_type_to_arrow("LIST")
@@ -148,7 +148,7 @@ class TestDuckDBTypeConversion:
         result = self.backend._duckdb_type_to_arrow("MAP")
         assert pa.types.is_map(result)
 
-    def test_case_insensitive_conversion(self):
+    def test_case_insensitive_conversion(self) -> None:
         """Test that type conversion is case insensitive."""
         test_cases = [
             ("varchar", pa.string()),
@@ -163,7 +163,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_unknown_type_fallback(self):
+    def test_unknown_type_fallback(self) -> None:
         """Test that unknown types fall back to string."""
         unknown_types = [
             "UNKNOWN_TYPE",
@@ -176,7 +176,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(unknown_type)
             assert result == pa.string(), f"Failed for unknown type: {unknown_type}"
 
-    def test_parameterized_types_edge_cases(self):
+    def test_parameterized_types_edge_cases(self) -> None:
         """Test edge cases in parameterized type parsing."""
         test_cases = [
             ("DECIMAL()", pa.decimal128(18, 3)),  # Empty params
@@ -190,7 +190,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_whitespace_handling(self):
+    def test_whitespace_handling(self) -> None:
         """Test that whitespace in type strings is handled correctly."""
         test_cases = [
             (" VARCHAR ", pa.string()),
@@ -203,7 +203,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_real_world_schema_conversion(self):
+    def test_real_world_schema_conversion(self) -> None:
         """Test conversion with a realistic schema scenario."""
         # Simulate a real DuckDB schema from DESCRIBE output
         duckdb_schema_types = [
@@ -221,7 +221,7 @@ class TestDuckDBTypeConversion:
             result = self.backend._duckdb_type_to_arrow(duckdb_type)
             assert result == expected_arrow_type, f"Failed for {duckdb_type}"
 
-    def test_integration_with_get_statement_schema(self):
+    def test_integration_with_get_statement_schema(self) -> None:
         """Test integration with get_statement_schema method."""
         # Create a test table
         self.backend.execute_sql("""

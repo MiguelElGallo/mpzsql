@@ -5,6 +5,7 @@ This module tests recent improvements to the DuckDB backend,
 particularly around Arrow result handling and type conversions.
 """
 
+from typing import Any, Generator
 from unittest.mock import Mock
 
 import pyarrow as pa
@@ -15,7 +16,7 @@ from mpzsql.config import ServerConfig
 
 
 @pytest.fixture
-def backend():
+def backend() -> Generator[DuckDBBackend, None, None]:
     """Provide a DuckDB backend instance for testing."""
     config = Mock(spec=ServerConfig)
     config.database = ":memory:"
@@ -33,7 +34,7 @@ def backend():
 class TestRecordBatchReaderHandling:
     """Test proper handling of RecordBatchReader results from DuckDB."""
 
-    def test_get_tables_returns_table_not_reader(self, backend):
+    def test_get_tables_returns_table_not_reader(self, backend: DuckDBBackend) -> None:
         """Test that get_tables returns a proper Arrow Table."""
         # Create a test table to query
         backend.connection.execute("CREATE TABLE test_table (id INTEGER, name VARCHAR)")
@@ -61,7 +62,7 @@ class TestRecordBatchReaderHandling:
         table_names = result.column("table_name").to_pylist()
         assert "test_table" in table_names
 
-    def test_get_db_schemas_returns_table_not_reader(self, backend):
+    def test_get_db_schemas_returns_table_not_reader(self, backend: DuckDBBackend) -> None:
         """Test that get_db_schemas returns a proper Arrow Table."""
         result = backend.get_db_schemas(catalog=None, db_schema_filter_pattern=None)
         
@@ -79,7 +80,7 @@ class TestRecordBatchReaderHandling:
         schema_names = result.column("db_schema_name").to_pylist()
         assert "main" in schema_names
 
-    def test_get_columns_returns_table_not_reader(self, backend):
+    def test_get_columns_returns_table_not_reader(self, backend: DuckDBBackend) -> None:
         """Test that get_columns returns a proper Arrow Table."""
         # Create a test table with columns
         backend.connection.execute("CREATE TABLE test_cols (id INTEGER, name VARCHAR(50), score DOUBLE)")
@@ -106,7 +107,7 @@ class TestRecordBatchReaderHandling:
 class TestTableSchemaRetrieval:
     """Test table schema retrieval functionality."""
 
-    def test_get_table_schema_returns_proper_schema(self, backend):
+    def test_get_table_schema_returns_proper_schema(self, backend: DuckDBBackend) -> None:
         """Test that get_table_schema returns a proper Arrow Schema."""
         # Create a test table with various data types
         backend.connection.execute("""
@@ -139,7 +140,7 @@ class TestTableSchemaRetrieval:
 class TestBackendRobustness:
     """Test backend robustness and error handling."""
 
-    def test_get_tables_empty_database(self, backend):
+    def test_get_tables_empty_database(self, backend: DuckDBBackend) -> None:
         """Test get_tables works even with empty database."""
         result = backend.get_tables(
             catalog=None,
@@ -154,7 +155,7 @@ class TestBackendRobustness:
         expected_columns = ["catalog_name", "db_schema_name", "table_name", "table_type"]
         assert result.schema.names == expected_columns
 
-    def test_get_tables_with_nonexistent_schema_filter(self, backend):
+    def test_get_tables_with_nonexistent_schema_filter(self, backend: DuckDBBackend) -> None:
         """Test get_tables with non-existent schema filter."""
         result = backend.get_tables(
             catalog=None,
@@ -168,7 +169,7 @@ class TestBackendRobustness:
         assert isinstance(result, pa.Table)
         assert result.num_rows == 0
 
-    def test_large_utf8_to_utf8_conversion(self, backend):
+    def test_large_utf8_to_utf8_conversion(self, backend: DuckDBBackend) -> None:
         """Test the _convert_large_utf8_to_utf8 method works properly."""
         # Create a table with string data
         test_table = pa.table({

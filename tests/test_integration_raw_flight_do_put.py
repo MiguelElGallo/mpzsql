@@ -22,7 +22,7 @@ from src.mpzsql.flightsql.minimal import MinimalFlightSQLServer
 class TestRawFlightDoPutIntegration:
     """Integration tests for raw Flight do_put functionality."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         """Set up test fixtures with real backend."""
         self.config = ServerConfig(
             database=":memory:",
@@ -40,7 +40,7 @@ class TestRawFlightDoPutIntegration:
             backend=self.backend, config=self.config, location=self.location
         )
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         """Clean up after tests."""
         if hasattr(self, "backend"):
             self.backend.close()
@@ -75,7 +75,7 @@ class TestRawFlightDoPutIntegration:
         }
         return pa.table(data)
 
-    def test_complete_batch_upload_workflow(self):
+    def test_complete_batch_upload_workflow(self) -> None:
         """Test complete batch upload workflow: upload -> verify -> query."""
         # Step 1: Create test data
         arrow_table = self.create_sample_arrow_table()
@@ -121,7 +121,7 @@ class TestRawFlightDoPutIntegration:
         assert data[0]["customer_name"] == "Alice Johnson"
         assert data[4]["order_id"] == 5
 
-    def test_complete_streaming_upload_workflow(self):
+    def test_complete_streaming_upload_workflow(self) -> None:
         """Test complete streaming upload workflow: schema -> chunks -> verify."""
         table_name = (
             "streaming_sales_stream"  # Use _stream suffix to trigger streaming mode
@@ -174,7 +174,7 @@ class TestRawFlightDoPutIntegration:
         mock_chunk2.data = chunk2.to_batches()[0]  # Convert table to RecordBatch
 
         # Make reader iterable
-        def mock_iter(self):
+        def mock_iter(self) -> None:
             return iter([mock_chunk1, mock_chunk2])
 
         reader.__iter__ = mock_iter
@@ -197,7 +197,7 @@ class TestRawFlightDoPutIntegration:
         unique_regions = result.to_pylist()[0]["regions"]
         assert unique_regions == 4  # North, South, East, West
 
-    def test_get_flight_info_integration(self):
+    def test_get_flight_info_integration(self) -> None:
         """Test get_flight_info integration with real backend."""
         # Step 1: Create a table using direct backend
         test_data = pa.table(
@@ -230,7 +230,7 @@ class TestRawFlightDoPutIntegration:
         assert "name" in field_names
         assert "value" in field_names
 
-    def test_error_handling_integration(self):
+    def test_error_handling_integration(self) -> None:
         """Test error handling in integration scenarios."""
         context = Mock(spec=pf.ServerCallContext)
 
@@ -255,7 +255,7 @@ class TestRawFlightDoPutIntegration:
         with pytest.raises(Exception):
             self.server._handle_file_upload_do_put(context, descriptor, reader, writer)
 
-    def test_table_replacement_integration(self):
+    def test_table_replacement_integration(self) -> None:
         """Test table replacement functionality."""
         table_name = "replacement_test"
         transformed_table_name = (
@@ -296,7 +296,7 @@ class TestRawFlightDoPutIntegration:
         ids = [row["id"] for row in result.to_pylist()]
         assert ids == [10, 20, 30]  # New IDs, not original ones
 
-    def test_complex_data_types_integration(self):
+    def test_complex_data_types_integration(self) -> None:
         """Test integration with complex Arrow data types."""
         import datetime
 
@@ -346,7 +346,7 @@ class TestRawFlightDoPutIntegration:
         true_rows = result.to_pylist()
         assert len(true_rows) == 2  # First and third rows
 
-    def test_concurrent_operations_simulation(self):
+    def test_concurrent_operations_simulation(self) -> None:
         """Test simulation of concurrent operations."""
         # Create multiple tables rapidly
         tables_created = []
@@ -389,7 +389,7 @@ class TestRawFlightDoPutIntegration:
             )
             assert len(result.to_pylist()) == 1
 
-    def test_backward_compatibility(self):
+    def test_backward_compatibility(self) -> None:
         """Test that existing FlightSQL functionality still works."""
         # This test ensures that adding raw Flight support didn't break FlightSQL
 

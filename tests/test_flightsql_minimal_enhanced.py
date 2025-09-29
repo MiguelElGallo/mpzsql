@@ -81,7 +81,7 @@ def location():
 class TestSqlConstants:
     """Test SQL constant definitions."""
 
-    def test_sql_info_constants(self):
+    def test_sql_info_constants(self) -> None:
         """Test SqlInfo constants."""
         assert SqlInfo.FLIGHT_SQL_SERVER_NAME == 0
         assert SqlInfo.FLIGHT_SQL_SERVER_VERSION == 1
@@ -91,20 +91,20 @@ class TestSqlConstants:
         assert SqlInfo.SQL_DDL_SCHEMA == 501
         assert SqlInfo.SQL_DDL_TABLE == 502
 
-    def test_transaction_constants(self):
+    def test_transaction_constants(self) -> None:
         """Test SqlSupportedTransaction constants."""
         assert SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_NONE == 0
         assert SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_TRANSACTION == 1
         assert SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_SAVEPOINT == 2
 
-    def test_case_sensitivity_constants(self):
+    def test_case_sensitivity_constants(self) -> None:
         """Test SqlSupportedCaseSensitivity constants."""
         assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_UNKNOWN == 0
         assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_CASE_INSENSITIVE == 1
         assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_UPPERCASE == 2
         assert SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_LOWERCASE == 3
 
-    def test_null_ordering_constants(self):
+    def test_null_ordering_constants(self) -> None:
         """Test SqlNullOrdering constants."""
         assert SqlNullOrdering.SQL_NULLS_SORTED_HIGH == 0
         assert SqlNullOrdering.SQL_NULLS_SORTED_LOW == 1
@@ -805,7 +805,6 @@ class TestPreparedStatements:
 class TestPreparedStatementFlightInfo:
     """Test FlightInfo generation for prepared statements."""
 
-    @pytest.fixture
     def server(self, mock_backend, config, location):
         """Create a test server instance."""
         return MinimalFlightSQLServer(
