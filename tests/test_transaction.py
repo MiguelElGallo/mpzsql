@@ -365,7 +365,7 @@ class TestTransactionManager:
         )
 
         # Set transaction to be 45 minutes old
-        old_time = datetime.utcnow() - timedelta(minutes=45)
+        old_time = datetime.now(timezone.utc) - timedelta(minutes=45)
         self.manager.transactions[transaction_id].created_at = old_time
 
         # Clean up with 30 minute timeout (should clean up)
@@ -376,7 +376,7 @@ class TestTransactionManager:
         transaction_id2 = self.manager.begin_transaction(
             self.session_id, self.mock_connection
         )
-        recent_time = datetime.utcnow() - timedelta(minutes=15)
+        recent_time = datetime.now(timezone.utc) - timedelta(minutes=15)
         self.manager.transactions[transaction_id2].created_at = recent_time
 
         # Clean up with 30 minute timeout (should NOT clean up)
@@ -391,8 +391,8 @@ class TestTransactionManager:
         txn3 = self.manager.begin_transaction("session3", Mock())
 
         # Make txn1 and txn3 old (abandoned), keep txn2 recent
-        old_time = datetime.utcnow() - timedelta(hours=2)
-        recent_time = datetime.utcnow() - timedelta(minutes=5)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
+        recent_time = datetime.now(timezone.utc) - timedelta(minutes=5)
 
         self.manager.transactions[txn1].created_at = old_time
         self.manager.transactions[txn2].created_at = recent_time
@@ -590,7 +590,7 @@ class TestTransactionIntegration:
         )
 
         # Make some transactions old
-        old_time = datetime.utcnow() - timedelta(hours=2)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=2)
         manager.transactions[abandoned_txn1].created_at = old_time
         manager.transactions[abandoned_txn2].created_at = old_time
 

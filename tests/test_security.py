@@ -798,6 +798,7 @@ class TestTLSCertificateLoader:
         config = Mock(spec=ServerConfig)
         config.is_tls_enabled = False
         config.is_mtls_enabled = True
+        config.mtls_ca = "/path/to/ca.crt"  # Add the required attribute
 
         with pytest.raises(ValueError, match="mTLS requires TLS to be enabled"):
             TLSCertificateLoader.configure_tls_options(config)

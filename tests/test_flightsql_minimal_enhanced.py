@@ -805,6 +805,7 @@ class TestPreparedStatements:
 class TestPreparedStatementFlightInfo:
     """Test FlightInfo generation for prepared statements."""
 
+    @pytest.fixture
     def server(self, mock_backend, config, location):
         """Create a test server instance."""
         return MinimalFlightSQLServer(

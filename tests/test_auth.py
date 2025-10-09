@@ -103,18 +103,26 @@ class TestAuthManager:
 
     def test_validate_token_expired(self) -> None:
         """Test validation of expired token."""
-        # Create auth manager with 0 hour expiry
+        # Create auth manager with very short expiry
         auth_manager = AuthManager(secret_key=self.secret_key, token_expiry_hours=0)
 
-        # Create token that will be expired
-        with patch("mpzsql.auth.datetime") as mock_datetime:
-            past_time = datetime.utcnow() - timedelta(hours=1)
-            mock_datetime.utcnow.return_value = past_time
-            token = auth_manager.create_token(self.test_username)
+        # Create a token with manually crafted expired timestamp
+        from datetime import timezone
+        session_id = str(uuid.uuid4())
+        past_time = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        payload = {
+            "username": self.test_username,
+            "session_id": session_id,
+            "exp": past_time,  # Already expired
+            "iat": past_time - timedelta(hours=1),
+        }
+
+        token = jwt.encode(payload, self.secret_key, algorithm="HS256")
 
         # Try to validate expired token
-        payload = self.auth_manager.validate_token(token)
-        assert payload is None
+        result = self.auth_manager.validate_token(token)
+        assert result is None
 
     def test_validate_token_invalid_signature(self) -> None:
         """Test validation of token with invalid signature."""
@@ -148,17 +156,16 @@ class TestAuthManager:
         session_id = payload["session_id"]
         original_activity = self.auth_manager.sessions[session_id]["last_activity"]
 
-        # Wait a bit and validate token
-        with patch("mpzsql.auth.datetime") as mock_datetime:
-            future_time = datetime.utcnow() + timedelta(seconds=10)
-            mock_datetime.utcnow.return_value = future_time
+        # Sleep briefly to ensure time difference
+        import time
+        time.sleep(0.1)
 
-            self.auth_manager.validate_token(token)
+        # Validate token which should update last activity
+        self.auth_manager.validate_token(token)
 
-            # Verify last activity was updated
-            updated_activity = self.auth_manager.sessions[session_id]["last_activity"]
-            assert updated_activity == future_time
-            assert updated_activity != original_activity
+        # Verify last activity was updated
+        updated_activity = self.auth_manager.sessions[session_id]["last_activity"]
+        assert updated_activity > original_activity
 
     def test_validate_token_nonexistent_session(self) -> None:
         """Test validation of token with session that was manually removed."""
@@ -295,15 +302,22 @@ class TestBearerAuthServerMiddleware:
 
     def test_authenticate_expired_token(self) -> None:
         """Test authentication with expired token."""
-        # Create auth manager with 0 hour expiry
+        # Create auth manager with short expiry
         auth_manager = AuthManager(secret_key="test-key", token_expiry_hours=0)
         middleware = BearerAuthServerMiddleware(auth_manager)
 
-        # Create expired token
-        with patch("mpzsql.auth.datetime") as mock_datetime:
-            past_time = datetime.utcnow() - timedelta(hours=1)
-            mock_datetime.utcnow.return_value = past_time
-            token = auth_manager.create_token(self.test_username)
+        # Create a token with manually crafted expired timestamp
+        session_id = str(uuid.uuid4())
+        past_time = datetime.now(timezone.utc) - timedelta(hours=1)
+
+        payload = {
+            "username": self.test_username,
+            "session_id": session_id,
+            "exp": past_time,  # Already expired
+            "iat": past_time - timedelta(hours=1),
+        }
+
+        token = jwt.encode(payload, "test-key", algorithm="HS256")
 
         headers = {"authorization": f"Bearer {token}"}
 
