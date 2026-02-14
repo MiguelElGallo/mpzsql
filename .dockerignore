@@ -1,0 +1,42 @@
+# Python artifacts
+__pycache__/
+*.py[codz]
+.venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.env
+*.duckdb
+*.wal
+
+# VCS & IDE
+.git/
+.github/
+.gitignore
+.vscode/
+.azure/
+
+# Infrastructure (not needed in image)
+infra/
+hooks/
+scripts/
+azure.yaml
+
+# Tests (not needed in production image)
+tests/
+
+# Documentation (README.md IS needed — referenced in pyproject.toml)
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+LICENSE
+DUCKLAKE_PLAN.md
+README_RESTRUCTURE_PLAN.md
+.python-version
+
+# OS artifacts
+.DS_Store
+Thumbs.db

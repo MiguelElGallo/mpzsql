@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "postgresSkuName": {
+      "value": "Standard_B1ms"
+    },
+    "postgresSkuTier": {
+      "value": "Burstable"
+    },
+    "postgresStorageSizeGb": {
+      "value": 128
+    },
+    "postgresAdminPassword": {
+      "value": "${POSTGRES_ADMIN_PASSWORD}"
+    },
+    "postgresEntraAdminObjectId": {
+      "value": "${POSTGRES_ENTRA_ADMIN_OBJECT_ID}"
+    },
+    "postgresEntraAdminPrincipalName": {
+      "value": "${POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME}"
+    },
+    "postgresEntraAdminPrincipalType": {
+      "value": "${POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE}"
+    },
+    "ducklakeDataPath": {
+      "value": "${DUCKLAKE_DATA_PATH}"
+    }
+  }
+}
