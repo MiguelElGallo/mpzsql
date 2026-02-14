@@ -1,6 +1,0 @@
-ignore:
-  - "src/demo_client"
-  - "src/generated"
-  - "src/mpzsql/flightsql/generated"
-  - "tests_.*.py"
-  - "scripts"
