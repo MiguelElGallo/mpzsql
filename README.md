@@ -2,8 +2,10 @@
 
 **High-Performance SQL Server for the Cloud — Arrow Flight SQL + DuckDB**
 
-Query DuckDB over the network using any Flight SQL or ADBC client.
+Query Ducklake over the network using any Flight SQL or ADBC client.
 Deploy to Azure in one command. Connect with JDBC or Python.
+
+***Experimental*** :Until Ducklake releases 1.0 this software is experimental.
 
 ---
 
