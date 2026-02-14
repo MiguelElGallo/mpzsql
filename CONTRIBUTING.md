@@ -37,4 +37,4 @@ uv run pytest
 
 ## Security
 
-Do not open public issues for vulnerabilities. See `SECURITY.md` for reporting instructions.
+This software is experimental, no commitment to fix security vulnerabilities.
