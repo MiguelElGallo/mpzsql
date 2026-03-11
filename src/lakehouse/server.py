@@ -155,8 +155,11 @@ _DUCKDB_TO_ARROW: dict[str, pa.DataType] = {
     "BOOLEAN": pa.bool_(),
     "BOOL": pa.bool_(),
     "DATE": pa.date32(),
-    "TIMESTAMP": pa.timestamp("us"),
-    "TIMESTAMP WITH TIME ZONE": pa.timestamp("us", tz="UTC"),
+    # JDBC prepared statements bind java.sql.Timestamp as an instant. Mark the
+    # Arrow parameter as UTC to keep the client from shifting the wall-clock
+    # value before it reaches the server.
+    "TIMESTAMP": pa.timestamp("ms", tz="UTC"),
+    "TIMESTAMP WITH TIME ZONE": pa.timestamp("ms", tz="UTC"),
     "BLOB": pa.binary(),
 }
 

@@ -30,8 +30,10 @@ fi
 echo "╚════════════════════════════════════════════════════════════╝"
 
 cd "$SCRIPT_DIR"
+MAVEN_OPTS="${MAVEN_OPTS:-} -Duser.timezone=UTC"
+export MAVEN_OPTS
 if [[ -n "$FLIGHT_URL" ]]; then
-	mvn -q test -Dflight.url="$FLIGHT_URL" 2>&1
+	mvn -q test -Dflight.url="$FLIGHT_URL" -Dtest=FlightSqlJdbcTest 2>&1
 else
 	uv run python "$SCRIPT_DIR/run_local_jdbc_tests.py" 2>&1
 fi

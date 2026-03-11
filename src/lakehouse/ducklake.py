@@ -178,13 +178,19 @@ def attach_ducklake(
 
         ATTACH 'ducklake:postgres:dbname=<db> host=<host> port=<port> user=<user>'
             AS <alias>
-            (DATA_PATH '<data_path>', META_SECRET 'pg_catalog_secret');
+            (
+                DATA_PATH '<data_path>',
+                META_SECRET 'pg_catalog_secret',
+                AUTOMATIC_MIGRATION TRUE
+            );
         USE <alias>;
 
     The ``META_SECRET`` parameter tells DuckLake to pass the named secret
     to the PostgreSQL catalog backend, providing the Entra ID token as the
-    password.  Token renewal only requires ``CREATE OR REPLACE SECRET`` —
-    no ``DETACH`` / ``ATTACH`` is needed.
+    password. ``AUTOMATIC_MIGRATION TRUE`` allows newer DuckLake extensions
+    to open and upgrade older catalog metadata versions in place. Token
+    renewal only requires ``CREATE OR REPLACE SECRET`` — no ``DETACH`` /
+    ``ATTACH`` is needed.
 
     Args:
         db: An open DuckDB connection.
@@ -209,7 +215,7 @@ def attach_ducklake(
     )
     db.execute(
         f"ATTACH '{conn_str}' AS {alias}"
-        f" (DATA_PATH '{data_path}', META_SECRET 'pg_catalog_secret')"
+        f" (DATA_PATH '{data_path}', META_SECRET 'pg_catalog_secret', AUTOMATIC_MIGRATION TRUE)"
     )
     logger.info("  DuckLake attached as %r", alias)
 

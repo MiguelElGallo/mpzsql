@@ -79,10 +79,12 @@ def main() -> int:
     time.sleep(0.5)
 
     script_dir = os.path.dirname(__file__)
-    command = ["mvn", "-q", "test", f"-Dflight.url={location}"]
+    command = ["mvn", "-q", "test", f"-Dflight.url={location}", "-Dtest=FlightSqlJdbcTest"]
+    env = os.environ.copy()
+    env["MAVEN_OPTS"] = f"{env.get('MAVEN_OPTS', '').strip()} -Duser.timezone=UTC".strip()
 
     try:
-        result = subprocess.run(command, cwd=script_dir, text=True)
+        result = subprocess.run(command, cwd=script_dir, env=env, text=True)
         return result.returncode
     finally:
         token_manager.stop()

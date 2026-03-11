@@ -33,6 +33,7 @@ from lakehouse.server import (
     _execute_query,
     _get_flight_info_for_command,
     _get_session_id,
+    _infer_parameter_schema,
     _prepare_get_tables_query,
     _record_batch_stream,
 )
@@ -127,6 +128,18 @@ class TestExecuteQuery:
         table = _execute_query(conn, "SELECT * FROM t WHERE v > ?", [15])
         assert table.num_rows == 1
         assert table.column("v")[0].as_py() == 20
+
+
+class TestInferParameterSchema:
+    """Tests for ``_infer_parameter_schema``."""
+
+    def test_timestamp_columns_use_millisecond_precision(self):
+        conn = duckdb.connect()
+        conn.execute("CREATE TABLE t (created_at TIMESTAMP)")
+
+        schema = _infer_parameter_schema(conn, "INSERT INTO t VALUES (?)", 1)
+
+        assert schema.field(0).type == pa.timestamp("ms", tz="UTC")
 
 
 class TestRecordBatchStream:

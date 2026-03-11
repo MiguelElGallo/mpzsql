@@ -18,6 +18,8 @@ package lakehouse;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.*;
+import java.util.Calendar;
+import java.util.TimeZone;
 import org.junit.jupiter.api.*;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -25,6 +27,7 @@ class FlightSqlJdbcTest {
 
     private static final String ALIAS = "lakehouse";
     private static final String SCHEMA = "main";
+    private static final Calendar UTC_CALENDAR = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
 
     private static Connection conn;
 
@@ -176,6 +179,31 @@ class FlightSqlJdbcTest {
 
     @Test
     @Order(7)
+    void preparedTimestampRoundTrip() throws SQLException {
+        String t = "t_jdbc_ts";
+        dropIfExists(t);
+        exec("CREATE TABLE " + fq(t) + " (id INT, created_at TIMESTAMP)");
+
+        Timestamp expected = Timestamp.valueOf("2026-02-12 10:00:00");
+        String sql = "INSERT INTO " + fq(t) + " VALUES (?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, 1);
+            ps.setTimestamp(2, expected, UTC_CALENDAR);
+            ps.executeUpdate();
+        }
+
+        try (ResultSet rs = query("SELECT id, created_at FROM " + fq(t))) {
+            assertTrue(rs.next());
+            assertEquals(1, rs.getInt(1));
+            assertEquals(expected, rs.getTimestamp(2, UTC_CALENDAR));
+            assertFalse(rs.next());
+        } finally {
+            dropIfExists(t);
+        }
+    }
+
+    @Test
+    @Order(8)
     void fullLifecycle() throws SQLException {
         String t = "t_jdbc_life";
         dropIfExists(t);
