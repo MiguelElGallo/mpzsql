@@ -1,11 +1,21 @@
 # Lakehouse
 
-**High-Performance SQL Server for the Cloud — Arrow Flight SQL + DuckDB**
+## Arrow Flight SQL + DuckDB on Azure
 
-Query Ducklake over the network using any Flight SQL or ADBC client.
-Deploy to Azure in one command. Connect with JDBC or Python.
+Query DuckLake over the network using Flight SQL.
+Deploy to Azure with `azd up`. Run the JDBC demo in a few commands.
 
-***Experimental*** :Until Ducklake releases 1.0 this software is experimental.
+> Experimental: until DuckLake reaches 1.0, this project should be treated as experimental.
+
+## Start Here
+
+If your goal is to get something running quickly:
+
+1. Install Azure CLI, Azure Developer CLI, Java 17+, and Maven.
+2. Run `azd up`.
+3. Run the built-in Arrow Flight SQL JDBC demo.
+
+Everything after the quickstart is reference.
 
 ---
 
@@ -20,27 +30,28 @@ Deploy to Azure in one command. Connect with JDBC or Python.
 
 ---
 
-## Deploy to Azure
+## Azure Quickstart
 
-Go from zero to a running Lakehouse server on Azure Container Apps.
+This is the shortest path from a fresh clone to a live Azure deployment and a working JDBC demo.
 
-### Prerequisites
+### 1. Install the few things you need
 
 | Tool | Install |
-|------|---------|
+| ------ | ------- |
 | Azure CLI | `brew install azure-cli` or [aka.ms/installazurecli](https://aka.ms/installazurecli) |
 | Azure Developer CLI | `brew install azd` or [learn.microsoft.com/azure/developer/azure-developer-cli/install-azd](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) |
-| PostgreSQL client | `brew install libpq` or `apt install postgresql-client` |
+| Java 17+ | any OpenJDK distribution |
+| Maven | `brew install maven` |
 | Git | `brew install git` |
 
-Log in to Azure:
+Sign in once:
 
 ```bash
 az login
 azd auth login
 ```
 
-### Step 1 — Clone and configure
+### 2. Copy, paste, and set the required values
 
 ```bash
 git clone https://github.com/MiguelElGallo/lakehouse.git
@@ -57,43 +68,46 @@ azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE "User"
 azd env set DUCKLAKE_DATA_PATH "az://lakehouse/data/"
 ```
 
-> **Tip:** Find your Entra Object ID with `az ad signed-in-user show --query id -o tsv`
-> and your UPN with `az ad signed-in-user show --query userPrincipalName -o tsv`.
+Find the Entra values if you need them:
 
-### Step 2 — Deploy
+```bash
+az ad signed-in-user show --query id -o tsv
+az ad signed-in-user show --query userPrincipalName -o tsv
+```
+
+If you prefer one compact block, this is the whole setup:
+
+```bash
+git clone https://github.com/MiguelElGallo/lakehouse.git
+cd lakehouse
+
+az login
+azd auth login
+
+azd env new lakehouse-dev
+azd env set AZURE_SUBSCRIPTION_ID "<your-subscription-id>"
+azd env set AZURE_RESOURCE_GROUP "rg-lakehouse2026"
+azd env set AZURE_LOCATION "centralus"
+azd env set POSTGRES_ADMIN_PASSWORD "<strong-password>"
+azd env set POSTGRES_ENTRA_ADMIN_OBJECT_ID "<your-entra-object-id>"
+azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME "<your-entra-upn>"
+azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE "User"
+azd env set DUCKLAKE_DATA_PATH "az://lakehouse/data/"
+
+azd up
+```
+
+### 3. Deploy to Azure
 
 ```bash
 azd up
 ```
 
-This single command provisions all Azure infrastructure (storage, PostgreSQL, Container Apps, managed identity), builds the Docker image remotely in Azure Container Registry (no local Docker or Podman required), and configures PostgreSQL grants.
+That single command provisions the infrastructure, builds the image remotely, deploys Container Apps, and runs the PostgreSQL grant hook.
 
-### Step 3 — Verify it's running
+### 4. Run the live JDBC demo
 
-```bash
-az containerapp show \
-  -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
-  -n "$(azd env get-value CONTAINER_APP_NAME)" \
-  --query properties.configuration.ingress.fqdn -o tsv
-```
-
-You should see an FQDN like:
-
-```text
-ca-lakehouse-xxxxx.centralus.azurecontainerapps.io
-```
-
-Done. Your Lakehouse server is live.
-
----
-
-## Connect to Your Server
-
-Now connect to the deployed server and run queries. Pick your client:
-
-### Option A — JDBC (Java)
-
-Grab the endpoint and password from Azure, then run the built-in demo:
+Get the endpoint and password:
 
 ```bash
 ENDPOINT="$(az containerapp show \
@@ -107,20 +121,41 @@ PASSWORD="$(az keyvault secret show \
   --query value -o tsv)"
 ```
 
-Run the Azure Demo:
+Run the Arrow Flight SQL JDBC demo:
 
 ```bash
 cd tests/jdbc
+export LAKEHOUSE_DEMO_ENDPOINT="$ENDPOINT"
+export LAKEHOUSE_DEMO_PASSWORD="$PASSWORD"
+export LAKEHOUSE_DEMO_USER="lakehouse"
 MAVEN_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED" \
-mvn -q \
-  -Dexec.mainClass=lakehouse.AzureDemo \
-  -Dexec.args="$ENDPOINT $PASSWORD lakehouse" \
-  test-compile exec:java
+mvn -q -Dexec.mainClass=lakehouse.AzureDemo test-compile exec:java
 ```
 
-> **Note:** The `MAVEN_OPTS` flag is required for Apache Arrow on Java 17+.
+The `MAVEN_OPTS` flag is required for Apache Arrow on Java 17+.
 
-You should see:
+If you want one copy/paste block for the demo itself:
+
+```bash
+ENDPOINT="$(az containerapp show \
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
+  -n "$(azd env get-value CONTAINER_APP_NAME)" \
+  --query properties.configuration.ingress.fqdn -o tsv):443"
+
+PASSWORD="$(az keyvault secret show \
+  --vault-name "$(azd env get-value KEY_VAULT_NAME)" \
+  --name lakehouse-password \
+  --query value -o tsv)"
+
+cd tests/jdbc
+export LAKEHOUSE_DEMO_ENDPOINT="$ENDPOINT"
+export LAKEHOUSE_DEMO_PASSWORD="$PASSWORD"
+export LAKEHOUSE_DEMO_USER="lakehouse"
+MAVEN_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED" \
+mvn -q -Dexec.mainClass=lakehouse.AzureDemo test-compile exec:java
+```
+
+### 5. What success looks like
 
 ```text
 Connecting to ca-lakehouse-xxxxx.centralus.azurecontainerapps.io:443 ...
@@ -131,7 +166,6 @@ Connecting to ca-lakehouse-xxxxx.centralus.azurecontainerapps.io:443 ...
   temp
 
 === SCHEMAS ===
-  lakehouse.ducklake_meta
   lakehouse.main
   ...
 
@@ -148,19 +182,39 @@ ID   NAME         DESCRIPTION        VALUE  CREATED_AT
 Done.
 ```
 
-The demo discovers catalogs and schemas, creates a table in DuckLake, inserts rows, and queries them — all through the Flight SQL protocol over TLS.
+At that point, the Azure deployment is working end to end through Arrow Flight SQL and JDBC.
 
-> **Tip:** You can also set environment variables instead of passing args:
->
-> ```bash
-> export LAKEHOUSE_DEMO_ENDPOINT="$ENDPOINT"
-> export LAKEHOUSE_DEMO_PASSWORD="$PASSWORD"
-> export LAKEHOUSE_DEMO_USER="lakehouse"
-> MAVEN_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED" \
-> mvn -q -Dexec.mainClass=lakehouse.AzureDemo test-compile exec:java
-> ```
+---
 
-### Option B — ADBC (Python)
+## After Quickstart
+
+Use this section only after the fast path above is already working.
+
+### What `azd up` gives you
+
+Lakehouse runs on Azure Container Apps and attaches DuckLake using:
+
+- Azure Blob Storage for data files
+- Azure Database for PostgreSQL Flexible Server for the catalog
+- Key Vault for the demo password
+- a managed identity for Azure access from the container
+
+### Verify the deployed endpoint
+
+```bash
+az containerapp show \
+  -g "$(azd env get-value AZURE_RESOURCE_GROUP)" \
+  -n "$(azd env get-value CONTAINER_APP_NAME)" \
+  --query properties.configuration.ingress.fqdn -o tsv
+```
+
+### Other client options
+
+#### JDBC notes
+
+`AzureDemo` also accepts `endpoint password [username]` as positional args, but the environment-variable form is more reliable with `mvn exec:java`.
+
+#### ADBC (Python)
 
 Install the ADBC Flight SQL driver:
 
@@ -175,7 +229,6 @@ import base64
 import adbc_driver_flightsql.dbapi as flight_sql
 from adbc_driver_flightsql import DatabaseOptions
 
-# Use the ENDPOINT and PASSWORD from above
 endpoint = "grpc+tls://ca-lakehouse-xxxxx.centralus.azurecontainerapps.io:443"
 token = base64.b64encode(b"lakehouse:<your-password>").decode()
 
@@ -189,9 +242,7 @@ cursor.execute("SELECT * FROM lakehouse.main.whatever ORDER BY id")
 print(cursor.fetchall())
 ```
 
-You should see the 5 rows inserted by the JDBC demo (or an empty result if you haven't run it yet).
-
----
+You should see the rows inserted by the JDBC demo, or an empty result if you have not run it yet.
 
 ## What Just Happened?
 
@@ -321,7 +372,7 @@ Most settings can be set via both CLI flags and `LAKEHOUSE_*` environment variab
 A few settings are environment-only (`.env` also works).
 
 | Setting | CLI Flag | Env Variable | Default | Availability | Description |
-|---------|----------|-------------|---------|--------------|-------------|
+| ------- | -------- | ------------ | ------- | ------------ | ----------- |
 | Host | `--host` | `LAKEHOUSE_HOST` | `0.0.0.0` | CLI + Env | Bind address |
 | Port | `--port` | `LAKEHOUSE_PORT` | `31337` | CLI + Env | Flight SQL (gRPC) port |
 | Database | `--database` | `LAKEHOUSE_DATABASE` | `:memory:` | CLI + Env | DuckDB database path |
@@ -408,7 +459,7 @@ docker run -p 31337:31337 -v ./data:/data lakehouse serve \
 ### Module Overview
 
 | Module | Description |
-|--------|-------------|
+| ------ | ----------- |
 | `dispatch.py` | Protobuf `Any` → Flight SQL command dispatch mixin (~680 lines) |
 | `server.py` | `DuckDBFlightSqlServer` — 35 Flight SQL handler implementations |
 | `session.py` | Per-client DuckDB session isolation and lifecycle |
@@ -426,7 +477,7 @@ docker run -p 31337:31337 -v ./data:/data lakehouse serve \
 Lakehouse implements all standard Flight SQL RPCs:
 
 | Category | Supported Operations |
-|----------|---------------------|
+| -------- | -------------------- |
 | **Queries** | `CommandStatementQuery`, `CommandStatementUpdate`, `CommandStatementSubstraitPlan` |
 | **Prepared Statements** | `ActionCreatePreparedStatementRequest`, `ActionClosePreparedStatementRequest`, `CommandPreparedStatementQuery`, `CommandPreparedStatementUpdate` |
 | **Catalog Metadata** | `CommandGetCatalogs`, `CommandGetDbSchemas`, `CommandGetTables`, `CommandGetTableTypes`, `CommandGetPrimaryKeys`, `CommandGetExportedKeys`, `CommandGetImportedKeys`, `CommandGetCrossReference` |
@@ -498,6 +549,7 @@ az postgres flexible-server show \
   ```bash
   CURRENT_IP="<your-public-ip>" azd hooks run postprovision
   ```
+
 - PostgreSQL is pinned to a low-cost profile (`Burstable`, `Standard_B1ms`, 1 vCore / 2 GiB, 128 GiB storage).
 - `centralus` is configured and tested. Some subscriptions are restricted for PostgreSQL in `eastus` / `eastus2`.
 
