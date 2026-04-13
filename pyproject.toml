@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "azure-identity>=1.25.2",
-    "duckdb>=1.5.0",
+    "duckdb>=1.5.2",
     "grpcio>=1.78.0",
     "grpcio-health-checking>=1.78.0",
     "protobuf>=6.33.5,<7",

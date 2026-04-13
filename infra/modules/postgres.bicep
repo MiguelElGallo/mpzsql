@@ -62,6 +62,10 @@ resource allowAzureServices 'Microsoft.DBforPostgreSQL/flexibleServers/firewallR
 resource postgresEntraAdmin 'Microsoft.DBforPostgreSQL/flexibleServers/administrators@2022-12-01' = {
   parent: postgresServer
   name: postgresEntraAdminObjectId
+  dependsOn: [
+    postgresDatabase
+    allowAzureServices
+  ]
   properties: {
     principalName: postgresEntraAdminPrincipalName
     principalType: postgresEntraAdminPrincipalType

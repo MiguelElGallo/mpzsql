@@ -494,6 +494,7 @@ Lakehouse implements all standard Flight SQL RPCs:
 - **Azure Database for PostgreSQL** — Flexible Server for the DuckLake catalog
 - **Azure Container Apps** — runs the Lakehouse Docker image
 - **User-assigned managed identity** — attached to the Container App, with `Storage Blob Data Contributor` RBAC
+- **PostgreSQL Entra admin principal** — granted `Storage Blob Data Contributor` RBAC for local DuckLake validation
 - **Azure Key Vault** — stores the Lakehouse password
 
 A `postprovision` hook runs automatically to configure PostgreSQL Entra auth grants for the managed identity.
@@ -552,6 +553,12 @@ az postgres flexible-server show \
 
 - PostgreSQL is pinned to a low-cost profile (`Burstable`, `Standard_B1ms`, 1 vCore / 2 GiB, 128 GiB storage).
 - `centralus` is configured and tested. Some subscriptions are restricted for PostgreSQL in `eastus` / `eastus2`.
+
+## Release Notes
+
+### April 13, 2026 dependency refresh
+
+Updated the `uv` lockfile to current compatible package versions and validated the Azure deployment flow. Notable upgrades include `duckdb` 1.5.2, `grpcio` 1.80.0, `grpcio-health-checking` 1.80.0, `azure-identity` 1.25.3, `azure-core` 1.39.0, `pydantic` 2.13.0, `pyjwt` 2.12.1, `rich` 15.0.0, `ruff` 0.15.10, `ty` 0.0.29, `pytest` 9.0.3, and `adbc-driver-flightsql` 1.11.0.
 
 ---
 
