@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.36.177.2456",
-      "templateHash": "7345016423235885447"
+      "version": "0.40.2.10011",
+      "templateHash": "7370216803261364591"
     }
   },
   "parameters": {
@@ -174,7 +174,7 @@
     {
       "type": "Microsoft.Authorization/roleAssignments",
       "apiVersion": "2022-04-01",
-      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', variables('storageAccountName'))]",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
       "name": "[guid(variables('storageAccountName'), variables('containerAppIdentityName'), 'StorageBlobDataContributor')]",
       "properties": {
         "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
@@ -187,8 +187,23 @@
       ]
     },
     {
+      "condition": "[not(empty(parameters('postgresEntraAdminObjectId')))]",
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+      "name": "[guid(variables('storageAccountName'), parameters('postgresEntraAdminObjectId'), 'StorageBlobDataContributor')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[parameters('postgresEntraAdminObjectId')]",
+        "principalType": "[parameters('postgresEntraAdminPrincipalType')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
+      ]
+    },
+    {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "storage",
       "properties": {
         "expressionEvaluationOptions": {
@@ -212,8 +227,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.36.177.2456",
-              "templateHash": "338631990624220867"
+              "version": "0.40.2.10011",
+              "templateHash": "7657623367991342205"
             }
           },
           "parameters": {
@@ -291,7 +306,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "postgres",
       "properties": {
         "expressionEvaluationOptions": {
@@ -342,8 +357,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.36.177.2456",
-              "templateHash": "1347685346152020084"
+              "version": "0.40.2.10011",
+              "templateHash": "17412473151410622885"
             }
           },
           "parameters": {
@@ -449,6 +464,8 @@
                 "tenantId": "[tenant().tenantId]"
               },
               "dependsOn": [
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/firewallRules', parameters('postgresServerName'), 'AllowAzureServices')]",
+                "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/databases', parameters('postgresServerName'), parameters('postgresDatabaseName'))]",
                 "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('postgresServerName'))]"
               ]
             }
@@ -472,7 +489,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "keyvault",
       "properties": {
         "expressionEvaluationOptions": {
@@ -502,8 +519,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.36.177.2456",
-              "templateHash": "13507411274665080282"
+              "version": "0.40.2.10011",
+              "templateHash": "15964644140239373440"
             }
           },
           "parameters": {
@@ -565,7 +582,7 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.KeyVault/vaults/{0}', parameters('keyVaultName'))]",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('containerAppPrincipalId'), 'KeyVaultSecretsUser')]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
@@ -580,7 +597,7 @@
               "condition": "[not(empty(parameters('deployerPrincipalId')))]",
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.KeyVault/vaults/{0}', parameters('keyVaultName'))]",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
               "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('deployerPrincipalId'), 'KeyVaultSecretsUser-deployer')]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
@@ -629,7 +646,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "acr",
       "properties": {
         "expressionEvaluationOptions": {
@@ -653,8 +670,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.36.177.2456",
-              "templateHash": "9204527443827625030"
+              "version": "0.40.2.10011",
+              "templateHash": "16453348899372526883"
             }
           },
           "parameters": {
@@ -706,7 +723,7 @@
             {
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
-              "scope": "[format('Microsoft.ContainerRegistry/registries/{0}', parameters('acrName'))]",
+              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName'))]",
               "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), parameters('pullPrincipalId'), 'AcrPull')]",
               "properties": {
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
@@ -740,7 +757,7 @@
     },
     {
       "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2022-09-01",
+      "apiVersion": "2025-04-01",
       "name": "containerApp",
       "properties": {
         "expressionEvaluationOptions": {
@@ -776,22 +793,22 @@
             "value": "[parameters('containerMemory')]"
           },
           "storageAccountName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2022-09-01').outputs.storageAccountName.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageAccountName.value]"
           },
           "postgresFqdn": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2022-09-01').outputs.postgresFqdn.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.postgresFqdn.value]"
           },
           "postgresDatabaseName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2022-09-01').outputs.postgresDatabaseName.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.postgresDatabaseName.value]"
           },
           "ducklakeDataPath": {
             "value": "[parameters('ducklakeDataPath')]"
           },
           "acrLoginServer": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2022-09-01').outputs.acrLoginServer.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.acrLoginServer.value]"
           },
           "lakehousePasswordSecretUri": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2022-09-01').outputs.lakehousePasswordSecretUri.value]"
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2025-04-01').outputs.lakehousePasswordSecretUri.value]"
           }
         },
         "template": {
@@ -800,8 +817,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.36.177.2456",
-              "templateHash": "1919177301668585657"
+              "version": "0.40.2.10011",
+              "templateHash": "6413779264902107673"
             }
           },
           "parameters": {
@@ -1019,27 +1036,27 @@
   "outputs": {
     "STORAGE_ACCOUNT_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2022-09-01').outputs.storageAccountName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageAccountName.value]"
     },
     "STORAGE_ACCOUNT_ID": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2022-09-01').outputs.storageAccountId.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'storage'), '2025-04-01').outputs.storageAccountId.value]"
     },
     "POSTGRES_SERVER_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2022-09-01').outputs.postgresServerName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.postgresServerName.value]"
     },
     "POSTGRES_FQDN": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2022-09-01').outputs.postgresFqdn.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.postgresFqdn.value]"
     },
     "POSTGRES_DATABASE_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2022-09-01').outputs.postgresDatabaseName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'postgres'), '2025-04-01').outputs.postgresDatabaseName.value]"
     },
     "CONTAINER_APP_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerApp'), '2022-09-01').outputs.containerAppName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'containerApp'), '2025-04-01').outputs.containerAppName.value]"
     },
     "CONTAINER_APP_IDENTITY_NAME": {
       "type": "string",
@@ -1055,27 +1072,27 @@
     },
     "ACR_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2022-09-01').outputs.acrName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.acrName.value]"
     },
     "ACR_LOGIN_SERVER": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2022-09-01').outputs.acrLoginServer.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.acrLoginServer.value]"
     },
     "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2022-09-01').outputs.acrLoginServer.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.acrLoginServer.value]"
     },
     "AZURE_CONTAINER_REGISTRY_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2022-09-01').outputs.acrName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'acr'), '2025-04-01').outputs.acrName.value]"
     },
     "KEY_VAULT_NAME": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2022-09-01').outputs.keyVaultName.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2025-04-01').outputs.keyVaultName.value]"
     },
     "KEY_VAULT_URI": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2022-09-01').outputs.keyVaultUri.value]"
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2025-04-01').outputs.keyVaultUri.value]"
     }
   }
 }

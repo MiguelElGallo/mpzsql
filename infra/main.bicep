@@ -177,6 +177,20 @@ resource storageBlobDataContributorAssignment 'Microsoft.Authorization/roleAssig
   }
 }
 
+resource postgresEntraAdminStorageBlobDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(postgresEntraAdminObjectId)) {
+  name: guid(storageAccountName, postgresEntraAdminObjectId, 'StorageBlobDataContributor')
+  scope: storageAccountExisting
+  dependsOn: [storage]
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+    )
+    principalId: postgresEntraAdminObjectId
+    principalType: postgresEntraAdminPrincipalType
+  }
+}
+
 output STORAGE_ACCOUNT_NAME string = storage.outputs.storageAccountName
 output STORAGE_ACCOUNT_ID string = storage.outputs.storageAccountId
 output POSTGRES_SERVER_NAME string = postgres.outputs.postgresServerName
