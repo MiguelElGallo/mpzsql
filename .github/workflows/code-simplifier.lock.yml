@@ -34,9 +34,6 @@
 
 name: "Code Simplifier"
 "on":
-  schedule:
-  - cron: "25 13 * * *"
-    # Friendly format: daily (scattered)
   # skip-if-match: is:pr is:open in:title "[code-simplifier]" # Skip-if-match processed as search check in pre-activation job
   workflow_dispatch:
 
@@ -1245,4 +1242,3 @@ jobs:
           name: safe-output-items
           path: /tmp/safe-output-items.jsonl
           if-no-files-found: warn
-
