@@ -7,6 +7,8 @@ Implements three PyArrow Flight server middleware factories:
   response headers.
 * **BearerAuthServerMiddlewareFactory** — validates incoming ``Bearer`` JWT
   tokens.
+* **RequiredAuthServerMiddlewareFactory** — rejects calls with no supported
+  authorization header when auth is enabled.
 * **AccessLogMiddlewareFactory** — logs every RPC call with method name and
   elapsed time.
 """
@@ -284,6 +286,36 @@ class BearerAuthServerMiddlewareFactory(flight.ServerMiddlewareFactory):
             raise flight.FlightUnauthenticatedError("Invalid token") from exc
 
         return BearerAuthServerMiddleware(payload=payload)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  RequiredAuthServerMiddlewareFactory
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class RequiredAuthServerMiddlewareFactory(flight.ServerMiddlewareFactory):
+    """Reject calls that do not present a supported Authorization header."""
+
+    def start_call(
+        self,
+        info: flight.CallInfo,
+        headers: dict[str, list[str]],
+    ) -> None:
+        """Require either Basic or Bearer auth on every Flight RPC.
+
+        Args:
+            info: RPC call information.
+            headers: Incoming request headers.
+
+        Raises:
+            flight.FlightUnauthenticatedError: If the request has no supported
+                Authorization header.
+        """
+        auth_header = _get_header(headers, "authorization")
+        if auth_header is None:
+            raise flight.FlightUnauthenticatedError("Authorization header is required")
+        if not auth_header.startswith(("Basic ", "Bearer ")):
+            raise flight.FlightUnauthenticatedError("Unsupported authorization scheme")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

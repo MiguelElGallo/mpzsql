@@ -5,7 +5,7 @@ to ``mvn test`` inside ``tests/jdbc/`` passing the server URL as
 ``-Dflight.url=grpc://127.0.0.1:<port>``.
 
 Skipped when:
-* DuckLake env vars are missing (same gate as ``test_e2e_ducklake.py``).
+* DuckLake env vars/azd outputs are missing (same gate as ``test_e2e_ducklake.py``).
 * Maven (``mvn``) is not on ``$PATH``.
 """
 
@@ -18,23 +18,25 @@ import subprocess
 import threading
 import time
 
+import duckdb
 import pytest
+
+from lakehouse._azd_env import apply_env_resolution, postgres_firewall_hint, resolve_ducklake_env
 
 # ───────────────────────────────────────────────────────────────────────────
 # Skip conditions
 # ───────────────────────────────────────────────────────────────────────────
 
-_REQUIRED_ENV = (
-    "DUCKLAKE_PG_HOST",
-    "DUCKLAKE_PG_DATABASE",
-    "DUCKLAKE_PG_USER",
-    "DUCKLAKE_AZURE_STORAGE_ACCOUNT",
-    "DUCKLAKE_DATA_PATH",
-)
-_missing = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+_resolution = resolve_ducklake_env()
+apply_env_resolution(_resolution)
+
+_missing = _resolution.missing
 
 pytestmark = [
-    pytest.mark.skipif(bool(_missing), reason=f"DuckLake env vars missing: {', '.join(_missing)}"),
+    pytest.mark.skipif(
+        bool(_missing),
+        reason=_resolution.skip_reason("DuckLake env vars missing"),
+    ),
     pytest.mark.skipif(shutil.which("mvn") is None, reason="Maven (mvn) not found"),
 ]
 
@@ -71,7 +73,20 @@ def ducklake_server():  # type: ignore[no-redef]
     srv = DuckDBFlightSqlServer(location=location, db_path=":memory:", ducklake_alias=alias)
     token_mgr = PostgresTokenManager(srv._db, config)
     token = token_mgr.get_initial_token()
-    initialize_ducklake(srv._db, config, token=token)
+    ducklake_error_type: str | None = None
+    try:
+        initialize_ducklake(srv._db, config, token=token)
+    except duckdb.Error as exc:
+        ducklake_error_type = type(exc).__name__
+
+    if ducklake_error_type is not None:
+        token_mgr.stop()
+        srv.shutdown()
+        message = (
+            "Failed to bootstrap the real Azure DuckLake catalog "
+            f"({ducklake_error_type}). {postgres_firewall_hint()}"
+        )
+        pytest.fail(message, pytrace=False)
 
     t = threading.Thread(target=srv.serve, daemon=True)
     t.start()

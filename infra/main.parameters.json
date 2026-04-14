@@ -31,6 +31,9 @@
     },
     "ducklakeDataPath": {
       "value": "${DUCKLAKE_DATA_PATH}"
+    },
+    "lakehouseSecretKey": {
+      "value": "${LAKEHOUSE_SECRET_KEY}"
     }
   }
 }

@@ -66,7 +66,12 @@ azd env set POSTGRES_ENTRA_ADMIN_OBJECT_ID "<your-entra-object-id>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME "<your-entra-upn>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE "User"
 azd env set DUCKLAKE_DATA_PATH "az://lakehouse/data/"
+azd env set LAKEHOUSE_SECRET_KEY "$(openssl rand -base64 32)"
 ```
+
+`openssl rand -base64 32` generates 32 random bytes and stores their base64-encoded form, usually a 44-character string ending in `=`. Use that encoded string directly as `LAKEHOUSE_SECRET_KEY`; the server treats it as a UTF-8 HMAC/JWT signing key and does not base64-decode it.
+
+Azure deployments require `LAKEHOUSE_SECRET_KEY` before `azd up` so the deployed Container App keeps a stable token-signing key across restarts and revisions.
 
 Find the Entra values if you need them:
 
@@ -93,6 +98,7 @@ azd env set POSTGRES_ENTRA_ADMIN_OBJECT_ID "<your-entra-object-id>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME "<your-entra-upn>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE "User"
 azd env set DUCKLAKE_DATA_PATH "az://lakehouse/data/"
+azd env set LAKEHOUSE_SECRET_KEY "$(openssl rand -base64 32)"
 
 azd up
 ```
@@ -133,6 +139,25 @@ mvn -q -Dexec.mainClass=lakehouse.AzureDemo test-compile exec:java
 ```
 
 The `MAVEN_OPTS` flag is required for Apache Arrow on Java 17+.
+
+### Run the live backend tests
+
+The live backend pytest is opt-in because it queries the deployed Azure Container App and reads the `lakehouse-password` secret from Key Vault:
+
+```bash
+LAKEHOUSE_LIVE_BACKEND=1 uv run pytest -q tests/test_live_azure_backend.py
+```
+
+That default path uses PyArrow to perform the Basic-token handshake, then gives the returned Bearer token to ADBC for the query. It verifies the deployed endpoint, TLS, Key Vault password, and Bearer auth path.
+
+There is also a separate opt-in check for ADBC's direct Basic-auth path:
+
+```bash
+LAKEHOUSE_LIVE_BACKEND=1 LAKEHOUSE_LIVE_BACKEND_ADBC_BASIC=1 \
+  uv run pytest -q tests/test_live_azure_backend.py
+```
+
+The ADBC Basic check is marked `xfail` because that is the known client path currently failing against the deployed Container App. A result such as `1 passed, 1 xfailed` means the supported bearer smoke test passed and the tracked ADBC Basic issue reproduced as expected. If that changes to `1 passed, 1 xpassed`, the ADBC Basic path has started working and the `xfail` marker should be removed.
 
 If you want one copy/paste block for the demo itself:
 
@@ -378,7 +403,7 @@ A few settings are environment-only (`.env` also works).
 | Database | `--database` | `LAKEHOUSE_DATABASE` | `:memory:` | CLI + Env | DuckDB database path |
 | Username | `--username` | `LAKEHOUSE_USERNAME` | `lakehouse` | CLI + Env | Auth username |
 | Password | `--password` | `LAKEHOUSE_PASSWORD` | *(empty)* | CLI + Env | Auth password (empty disables auth) |
-| Secret Key | `--secret-key` | `LAKEHOUSE_SECRET_KEY` | *(auto-generated)* | CLI + Env | HMAC / JWT signing key |
+| Secret Key | `--secret-key` | `LAKEHOUSE_SECRET_KEY` | *(auto-generated locally; required for Azure deploy)* | CLI + Env | HMAC / JWT signing key |
 | Health Port | `--health-check-port` | `LAKEHOUSE_HEALTH_CHECK_PORT` | `8081` | CLI + Env | gRPC health service port |
 | Health Enabled | `--health-check-enabled` | `LAKEHOUSE_HEALTH_CHECK_ENABLED` | `true` | CLI + Env | Enable health check server |
 | Log Level | `--log-level` | `LAKEHOUSE_LOG_LEVEL` | `INFO` | CLI + Env | Python log level |
@@ -495,7 +520,7 @@ Lakehouse implements all standard Flight SQL RPCs:
 - **Azure Container Apps** — runs the Lakehouse Docker image
 - **User-assigned managed identity** — attached to the Container App, with `Storage Blob Data Contributor` RBAC
 - **PostgreSQL Entra admin principal** — granted `Storage Blob Data Contributor` RBAC for local DuckLake validation
-- **Azure Key Vault** — stores the Lakehouse password
+- **Azure Key Vault** — stores the Lakehouse password and stable HMAC/JWT signing key
 
 A `postprovision` hook runs automatically to configure PostgreSQL Entra auth grants for the managed identity.
 

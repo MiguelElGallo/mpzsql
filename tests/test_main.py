@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import re
+import socket
+import threading
+import time
 from unittest.mock import patch
 
+import adbc_driver_flightsql.dbapi as flightsql
+import pytest
 from typer.testing import CliRunner
 
 from lakehouse.__main__ import app, build_server
@@ -16,6 +21,12 @@ runner = CliRunner()
 def _strip_ansi(text: str) -> str:
     """Remove ANSI escape sequences from text."""
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -48,6 +59,38 @@ class TestBuildServer:
         )
         server = build_server(config)
         server.shutdown()
+
+    def test_auth_with_password_rejects_missing_credentials(self):
+        """build_server wires the production auth middleware stack."""
+        port = _free_port()
+        config = ServerConfig(
+            host="127.0.0.1",
+            port=port,
+            database=":memory:",
+            password="test-password",
+            secret_key="test-key-at-least-32-bytes-long-x",
+        )
+        server = build_server(config)
+        thread = threading.Thread(target=server.serve, daemon=True)
+        thread.start()
+        time.sleep(0.5)
+
+        conn = None
+        cursor = None
+        try:
+            with pytest.raises(
+                Exception,
+                match=r"UNAUTHENTICATED|Authorization header is required",
+            ):
+                conn = flightsql.connect(f"grpc://127.0.0.1:{port}")
+                cursor = conn.execute("SELECT 1")
+                cursor.fetchall()
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if conn is not None:
+                conn.close()
+            server.shutdown()
 
     def test_custom_database(self, tmp_path):
         """build_server can create a DuckDB file-backed database."""

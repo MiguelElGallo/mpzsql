@@ -10,13 +10,7 @@ import time
 
 import duckdb
 
-_REQUIRED_ENV = (
-    "DUCKLAKE_PG_HOST",
-    "DUCKLAKE_PG_DATABASE",
-    "DUCKLAKE_PG_USER",
-    "DUCKLAKE_AZURE_STORAGE_ACCOUNT",
-    "DUCKLAKE_DATA_PATH",
-)
+from lakehouse._azd_env import apply_env_resolution, postgres_firewall_hint, resolve_ducklake_env
 
 
 def _free_port() -> int:
@@ -26,10 +20,11 @@ def _free_port() -> int:
 
 
 def _require_environment() -> None:
-    missing = [name for name in _REQUIRED_ENV if not os.environ.get(name)]
-    if missing:
-        joined = ", ".join(missing)
-        raise SystemExit(f"Missing DuckLake environment variables: {joined}")
+    resolution = resolve_ducklake_env()
+    apply_env_resolution(resolution)
+
+    if resolution.missing:
+        raise SystemExit(resolution.skip_reason("Missing DuckLake environment variables"))
 
     if shutil.which("mvn") is None:
         raise SystemExit("Maven (mvn) not found on PATH")
@@ -69,10 +64,10 @@ def main() -> int:
     except duckdb.Error as exc:
         message = (
             "Failed to bootstrap the local DuckLake catalog. "
-            "Verify the DUCKLAKE_* settings and that this machine can reach the configured "
-            "PostgreSQL server."
+            "Verify the DUCKLAKE_* settings or azd environment outputs. "
+            f"{postgres_firewall_hint()}"
         )
-        raise SystemExit(f"{message}\n{exc}") from exc
+        raise SystemExit(f"{message}\nError type: {type(exc).__name__}") from None
 
     thread = threading.Thread(target=server.serve, daemon=True)
     thread.start()

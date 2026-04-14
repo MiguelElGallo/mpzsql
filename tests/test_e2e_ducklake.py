@@ -2,8 +2,9 @@
 
 These tests start a Flight SQL server wired to a real DuckLake catalog
 (PostgreSQL on Azure + Parquet on Azure Blob Storage) and exercise
-DDL/DML through ADBC.  They are **skipped** unless the required
-environment variables are set.
+DDL/DML through ADBC.  They use explicit ``DUCKLAKE_*`` environment
+variables first, then fall back to local azd deployment outputs from
+``.azure/<env>/.env``.
 
 Required environment variables
 ------------------------------
@@ -43,28 +44,25 @@ import threading
 import time
 
 import adbc_driver_flightsql.dbapi as flightsql
+import duckdb
 import pyarrow as pa
 import pytest
 
+from lakehouse._azd_env import apply_env_resolution, postgres_firewall_hint, resolve_ducklake_env
 from lakehouse.server import DuckDBFlightSqlServer
 
 # ───────────────────────────────────────────────────────────────────────────
 # Environment & skip logic
 # ───────────────────────────────────────────────────────────────────────────
 
-_REQUIRED_ENV = (
-    "DUCKLAKE_PG_HOST",
-    "DUCKLAKE_PG_DATABASE",
-    "DUCKLAKE_PG_USER",
-    "DUCKLAKE_AZURE_STORAGE_ACCOUNT",
-    "DUCKLAKE_DATA_PATH",
-)
+_resolution = resolve_ducklake_env()
+apply_env_resolution(_resolution)
 
-_missing = [v for v in _REQUIRED_ENV if not os.environ.get(v)]
+_missing = _resolution.missing
 
 pytestmark = pytest.mark.skipif(
     bool(_missing),
-    reason=f"DuckLake env vars missing: {', '.join(_missing)}",
+    reason=_resolution.skip_reason("DuckLake env vars missing"),
 )
 
 
@@ -142,7 +140,20 @@ def ducklake_server():
     # DuckLake init: extensions, secrets, ATTACH, USE
     token_mgr = PostgresTokenManager(srv._db, config)
     token = token_mgr.get_initial_token()
-    initialize_ducklake(srv._db, config, token=token)
+    ducklake_error_type: str | None = None
+    try:
+        initialize_ducklake(srv._db, config, token=token)
+    except duckdb.Error as exc:
+        ducklake_error_type = type(exc).__name__
+
+    if ducklake_error_type is not None:
+        token_mgr.stop()
+        srv.shutdown()
+        message = (
+            "Failed to bootstrap the real Azure DuckLake catalog "
+            f"({ducklake_error_type}). {postgres_firewall_hint()}"
+        )
+        pytest.fail(message, pytrace=False)
 
     _start_server(srv)
     yield srv, port

@@ -29,6 +29,7 @@ from lakehouse.auth import (
     BasicAuthServerMiddlewareFactory,
     BearerAuthServerMiddlewareFactory,
     NoOpAuthHandler,
+    RequiredAuthServerMiddlewareFactory,
 )
 from lakehouse.config import ServerConfig
 from lakehouse.health import BackgroundHealthPoller, HealthServer
@@ -75,6 +76,7 @@ def build_server(config: ServerConfig) -> DuckDBFlightSqlServer:
             secret_key=config.secret_key,
             issuer=config.jwt_issuer,
         )
+        middleware["required-auth"] = RequiredAuthServerMiddlewareFactory()
         logger.info("Authentication enabled (username=%s)", config.username)
     else:
         logger.warning("No password configured — authentication is DISABLED")
