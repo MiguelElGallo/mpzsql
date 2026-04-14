@@ -34,12 +34,14 @@ Test matrix
 from __future__ import annotations
 
 import base64
+import contextlib
 import socket
 import threading
 import time
 
 import adbc_driver_flightsql
 import adbc_driver_flightsql.dbapi as flightsql
+import adbc_driver_manager
 import grpc
 import pyarrow as pa
 import pytest
@@ -76,6 +78,14 @@ def _start_server(server: DuckDBFlightSqlServer) -> threading.Thread:
     return t
 
 
+def _connect_autocommit(uri: str, **kwargs):
+    """Open a Flight SQL DBAPI connection for tests that assume autocommit."""
+    conn = flightsql.connect(uri, **kwargs)
+    with contextlib.suppress(adbc_driver_manager.NotSupportedError):
+        conn.adbc_connection.set_autocommit(True)
+    return conn
+
+
 # ───────────────────────────────────────────────────────────────────────────
 # Fixtures — plain server (no auth)
 # ───────────────────────────────────────────────────────────────────────────
@@ -96,7 +106,7 @@ def plain_server():
 def plain_conn(plain_server):
     """ADBC connection to the plain server."""
     _srv, port = plain_server
-    conn = flightsql.connect(f"grpc://127.0.0.1:{port}")
+    conn = _connect_autocommit(f"grpc://127.0.0.1:{port}")
     yield conn
     conn.close()
 
@@ -123,7 +133,7 @@ def seeded_server():
 def seeded_conn(seeded_server):
     """ADBC connection to the seeded server."""
     _srv, port = seeded_server
-    conn = flightsql.connect(f"grpc://127.0.0.1:{port}")
+    conn = _connect_autocommit(f"grpc://127.0.0.1:{port}")
     yield conn
     conn.close()
 
@@ -176,7 +186,7 @@ def auth_conn(auth_server):
     """
     _srv, port = auth_server
     basic_token = base64.b64encode(f"{_TEST_USERNAME}:{_TEST_PASSWORD}".encode()).decode()
-    conn = flightsql.connect(
+    conn = _connect_autocommit(
         f"grpc://127.0.0.1:{port}",
         db_kwargs={
             adbc_driver_flightsql.DatabaseOptions.AUTHORIZATION_HEADER.value: (
@@ -301,6 +311,40 @@ class TestE2EMetadata:
         assert table.num_rows >= 0
         assert "catalog_name" in table.column_names
 
+    def test_get_objects_db_schemas_filter(self, seeded_conn):
+        """ADBC GetObjects applies a simple schema-name filter."""
+        reader = seeded_conn.adbc_get_objects(
+            depth="db_schemas",
+            db_schema_filter="main",
+        )
+        table = reader.read_all()
+
+        memory_catalog = next(
+            row for row in table.to_pylist() if row["catalog_name"] == "memory"
+        )
+        schemas = memory_catalog["catalog_db_schemas"]
+        assert schemas == [{"db_schema_name": "main", "db_schema_tables": None}]
+
+    def test_get_objects_tables_filter(self, seeded_conn):
+        reader = seeded_conn.adbc_get_objects(
+            depth="tables",
+            table_name_filter="test_data",
+        )
+        table = reader.read_all()
+
+        memory_catalog = next(
+            row for row in table.to_pylist() if row["catalog_name"] == "memory"
+        )
+        tables = memory_catalog["catalog_db_schemas"][0]["db_schema_tables"]
+        assert tables == [
+            {
+                "table_name": "test_data",
+                "table_type": "BASE TABLE",
+                "table_columns": None,
+                "table_constraints": None,
+            }
+        ]
+
     def test_get_table_types(self, plain_conn):
         table_types = plain_conn.adbc_get_table_types()
         assert isinstance(table_types, list)
@@ -310,6 +354,23 @@ class TestE2EMetadata:
         assert isinstance(info, dict)
         assert len(info) > 0
 
+    def test_transaction_capability_discovery_allows_autocommit_toggle(self, plain_conn):
+        """ADBC transaction APIs discover SqlInfo entries and support rollback."""
+        plain_conn.execute("CREATE TABLE t_adbc_txn_probe (id INT)").close()
+
+        plain_conn.adbc_connection.set_autocommit(False)
+        try:
+            plain_conn.execute("INSERT INTO t_adbc_txn_probe VALUES (1)").close()
+            plain_conn.rollback()
+        finally:
+            plain_conn.adbc_connection.set_autocommit(True)
+
+        cur = plain_conn.execute("SELECT id FROM t_adbc_txn_probe")
+        try:
+            assert cur.fetchall() == []
+        finally:
+            cur.close()
+
     def test_get_table_schema_preseeded(self, seeded_conn):
         """Get schema for a pre-created table."""
         schema = seeded_conn.adbc_get_table_schema("test_data")
@@ -318,6 +379,16 @@ class TestE2EMetadata:
         assert "id" in field_names
         assert "name" in field_names
         assert "value" in field_names
+
+    def test_execute_schema(self, plain_conn):
+        """ADBC execute_schema uses Flight GetSchema for query schema discovery."""
+        cur = plain_conn.cursor()
+        try:
+            schema = cur.adbc_execute_schema("SELECT 1 AS value, 'x' AS label")
+        finally:
+            cur.close()
+
+        assert schema.names == ["value", "label"]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -347,7 +418,7 @@ class TestE2EAuth:
         srv._db.execute("INSERT INTO auth_data VALUES (1, 'secret')")
 
         basic_token = base64.b64encode(f"{_TEST_USERNAME}:{_TEST_PASSWORD}".encode()).decode()
-        conn = flightsql.connect(
+        conn = _connect_autocommit(
             f"grpc://127.0.0.1:{port}",
             db_kwargs={
                 adbc_driver_flightsql.DatabaseOptions.AUTHORIZATION_HEADER.value: (
@@ -580,20 +651,77 @@ class TestE2EDDL:
 
     # ── Transaction rollback ─────────────────────────────────────────
 
-    def test_transaction_rollback(self, plain_conn):
-        """ROLLBACK undoes changes made in the transaction."""
+    def test_dbapi_commit_and_rollback(self, plain_conn):
+        """DBAPI commit/rollback use ADBC transaction actions."""
         plain_conn.execute("CREATE TABLE t_txn (id INT)").close()
-        plain_conn.execute("INSERT INTO t_txn VALUES (1)").close()
 
-        # Start explicit transaction, insert, then rollback
-        plain_conn.execute("BEGIN TRANSACTION").close()
-        plain_conn.execute("INSERT INTO t_txn VALUES (2)").close()
-        plain_conn.execute("ROLLBACK").close()
+        plain_conn.adbc_connection.set_autocommit(False)
+        try:
+            plain_conn.execute("INSERT INTO t_txn VALUES (1)").close()
+            plain_conn.commit()
+
+            plain_conn.execute("INSERT INTO t_txn VALUES (2)").close()
+            plain_conn.rollback()
+        finally:
+            plain_conn.adbc_connection.set_autocommit(True)
 
         cur = plain_conn.execute("SELECT id FROM t_txn ORDER BY id")
         rows = cur.fetchall()
         assert rows == [(1,)]
         cur.close()
+
+    def test_execute_partitions_single_endpoint(self, seeded_conn):
+        """ADBC partition execution round-trips through the single Flight endpoint."""
+        cur = seeded_conn.cursor()
+        try:
+            partitions, schema = cur.adbc_execute_partitions(
+                "SELECT id, name FROM test_data ORDER BY id"
+            )
+
+            assert len(partitions) == 1
+            assert schema.names == ["id", "name"]
+
+            cur.adbc_read_partition(partitions[0])
+            assert cur.fetchall() == [(1, "alice"), (2, "bob"), (3, "carol")]
+        finally:
+            cur.close()
+
+    def test_adbc_cancel_idle_statement_is_non_disruptive(self, plain_conn):
+        """Current ADBC cancel behavior is safe when no operation is in flight."""
+        cur = plain_conn.cursor()
+        try:
+            cur.adbc_cancel()
+            cur.execute("SELECT 1 AS value")
+            assert cur.fetchall() == [(1,)]
+        finally:
+            cur.close()
+
+    def test_adbc_ingest_python_driver_path(self, plain_conn):
+        """Exercise Python Flight SQL ADBC ingest, or xfail if the driver lacks it."""
+        data = pa.table({"id": [1, 2], "label": ["one", "two"]})
+        cur = plain_conn.cursor()
+        try:
+            try:
+                rows_inserted = cur.adbc_ingest(
+                    "t_adbc_ingest",
+                    data,
+                    mode="create",
+                )
+            except adbc_driver_manager.NotSupportedError as exc:
+                pytest.xfail(
+                    "Python Flight SQL ADBC driver does not support ingest in this "
+                    f"environment: {exc}"
+                )
+
+            assert rows_inserted in (-1, 2)
+        finally:
+            cur.close()
+
+        cur = plain_conn.execute("SELECT id, label FROM t_adbc_ingest ORDER BY id")
+        try:
+            assert cur.fetchall() == [(1, "one"), (2, "two")]
+        finally:
+            cur.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -140,6 +140,8 @@ mvn -q -Dexec.mainClass=lakehouse.AzureDemo test-compile exec:java
 
 The `MAVEN_OPTS` flag is required for Apache Arrow on Java 17+.
 
+For ADBC support details, see the [ADBC coverage matrix](docs/adbc-coverage.md).
+
 ### Run the live backend tests
 
 The live backend pytest is opt-in because it queries the deployed Azure Container App and reads the `lakehouse-password` secret from Key Vault:
@@ -157,7 +159,7 @@ LAKEHOUSE_LIVE_BACKEND=1 LAKEHOUSE_LIVE_BACKEND_ADBC_BASIC=1 \
   uv run pytest -q tests/test_live_azure_backend.py
 ```
 
-The ADBC Basic check is marked `xfail` because that is the known client path currently failing against the deployed Container App. A result such as `1 passed, 1 xfailed` means the supported bearer smoke test passed and the tracked ADBC Basic issue reproduced as expected. If that changes to `1 passed, 1 xpassed`, the ADBC Basic path has started working and the `xfail` marker should be removed.
+The ADBC Basic check is marked `xfail` because that is the known client path currently failing against the deployed Container App. A result with all bearer-path tests passing and one `xfailed` direct-Basic test means the supported ADBC live checks passed and the tracked ADBC Basic issue reproduced as expected. If that changes to `xpassed`, the ADBC Basic path has started working and the `xfail` marker should be removed.
 
 If you want one copy/paste block for the demo itself:
 
@@ -250,16 +252,26 @@ pip install adbc-driver-flightsql
 Connect to your Azure deployment:
 
 ```python
-import base64
+import pyarrow.flight as fl
 import adbc_driver_flightsql.dbapi as flight_sql
 from adbc_driver_flightsql import DatabaseOptions
 
 endpoint = "grpc+tls://ca-lakehouse-xxxxx.centralus.azurecontainerapps.io:443"
-token = base64.b64encode(b"lakehouse:<your-password>").decode()
+
+# Supported Azure path: use PyArrow for the Basic-token handshake, then
+# pass the returned Bearer token to ADBC.
+client = fl.connect(endpoint)
+header_name, bearer_header = client.authenticate_basic_token("lakehouse", "<your-password>")
+if isinstance(header_name, bytes):
+    header_name = header_name.decode()
+if isinstance(bearer_header, bytes):
+    bearer_header = bearer_header.decode()
+if header_name.lower() != "authorization" or not bearer_header.startswith("Bearer "):
+    raise RuntimeError("Basic auth did not return a Bearer authorization header")
 
 conn = flight_sql.connect(
     endpoint,
-    db_kwargs={DatabaseOptions.AUTHORIZATION_HEADER.value: f"Basic {token}"},
+    db_kwargs={DatabaseOptions.AUTHORIZATION_HEADER.value: bearer_header},
 )
 
 cursor = conn.cursor()
@@ -268,6 +280,8 @@ print(cursor.fetchall())
 ```
 
 You should see the rows inserted by the JDBC demo, or an empty result if you have not run it yet.
+
+The direct Basic-auth ADBC path is tracked separately as an opt-in `xfail` live test. Do not use it as the supported Azure ADBC example until that test is promoted.
 
 ## What Just Happened?
 
@@ -499,15 +513,18 @@ docker run -p 31337:31337 -v ./data:/data lakehouse serve \
 
 ## Flight SQL Protocol Support
 
-Lakehouse implements all standard Flight SQL RPCs:
+Lakehouse implements the following Flight SQL operations:
 
 | Category | Supported Operations |
 | -------- | -------------------- |
-| **Queries** | `CommandStatementQuery`, `CommandStatementUpdate`, `CommandStatementSubstraitPlan` |
+| **Queries** | `CommandStatementQuery`, `CommandStatementUpdate` |
 | **Prepared Statements** | `ActionCreatePreparedStatementRequest`, `ActionClosePreparedStatementRequest`, `CommandPreparedStatementQuery`, `CommandPreparedStatementUpdate` |
 | **Catalog Metadata** | `CommandGetCatalogs`, `CommandGetDbSchemas`, `CommandGetTables`, `CommandGetTableTypes`, `CommandGetPrimaryKeys`, `CommandGetExportedKeys`, `CommandGetImportedKeys`, `CommandGetCrossReference` |
 | **SQL Info** | `CommandGetSqlInfo`, `CommandGetXdbcTypeInfo` |
-| **Transactions** | `ActionBeginTransactionRequest`, `ActionEndTransactionRequest`, `ActionBeginSavepointRequest`, `ActionEndSavepointRequest` |
+| **Schemas** | Flight `GetSchema` for statement queries, prepared statements, and metadata commands |
+| **Transactions** | `ActionBeginTransactionRequest`, `ActionEndTransactionRequest` |
+
+Substrait and savepoint commands are intentionally not listed as supported. See the [ADBC coverage matrix](docs/adbc-coverage.md) for ADBC-specific support and limitations.
 
 ---
 

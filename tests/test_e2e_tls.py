@@ -9,6 +9,7 @@ No external env vars required — runs entirely in-memory with DuckDB.
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import os
 import shutil
@@ -21,6 +22,7 @@ from pathlib import Path
 
 import adbc_driver_flightsql
 import adbc_driver_flightsql.dbapi as flightsql
+import adbc_driver_manager
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -162,6 +164,8 @@ def tls_conn(tls_server, tls_artifacts):
             adbc_driver_flightsql.DatabaseOptions.TLS_ROOT_CERTS.value: ca_bytes,
         },
     )
+    with contextlib.suppress(adbc_driver_manager.NotSupportedError):
+        conn.adbc_connection.set_autocommit(True)
     yield conn
     conn.close()
 

@@ -266,6 +266,51 @@ class TestGetFlightInfoStatement:
         assert info.schema.names == ["value"]
 
 
+class TestGetSchema:
+    """Tests for the Flight ``GetSchema`` RPC."""
+
+    def test_statement_query_schema(self, server_with_data, ctx):
+        cmd = fs.CommandStatementQuery(query="SELECT id, name FROM test_table")
+        descriptor = _make_descriptor(cmd)
+
+        result = server_with_data.get_schema(ctx, descriptor)
+
+        assert isinstance(result, flight.SchemaResult)
+        assert result.schema.names == ["id", "name"]
+
+    def test_prepared_statement_schema_without_executing_ddl(self, server, ctx):
+        create_req = fs.ActionCreatePreparedStatementRequest(
+            query="CREATE TABLE schema_probe_side_effect (id INT)"
+        )
+        prepared = server.create_prepared_statement(ctx, create_req)
+        cmd = fs.CommandPreparedStatementQuery(
+            prepared_statement_handle=prepared.prepared_statement_handle
+        )
+        descriptor = _make_descriptor(cmd)
+
+        result = server.get_schema(ctx, descriptor)
+
+        assert isinstance(result, flight.SchemaResult)
+        assert result.schema == pa.schema([])
+        with pytest.raises(duckdb.CatalogException):
+            server._get_session(ctx).execute("SELECT * FROM schema_probe_side_effect")
+
+    def test_metadata_schema(self, server, ctx):
+        cmd = fs.CommandGetTables(include_schema=True)
+        descriptor = _make_descriptor(cmd)
+
+        result = server.get_schema(ctx, descriptor)
+
+        assert isinstance(result, flight.SchemaResult)
+        assert result.schema.names == [
+            "catalog_name",
+            "db_schema_name",
+            "table_name",
+            "table_type",
+            "table_schema",
+        ]
+
+
 class TestGetFlightInfoCatalogs:
     def test_returns_catalogs_schema(self, server, ctx):
         cmd = fs.CommandGetCatalogs()
@@ -877,9 +922,50 @@ class TestBuildSqlInfoTable:
         assert value_col[0].as_py() == "lakehouse"
 
     def test_read_only_is_false(self):
-        table = _build_sql_info_table([500])
+        table = _build_sql_info_table([fs.FLIGHT_SQL_SERVER_READ_ONLY])
         value_col = table.column("value")
         assert value_col[0].as_py() is False
+
+    def test_current_flight_sql_capability_ids_are_reported(self):
+        current_capability_ids = [
+            fs.FLIGHT_SQL_SERVER_READ_ONLY,
+            fs.FLIGHT_SQL_SERVER_SQL,
+            fs.FLIGHT_SQL_SERVER_SUBSTRAIT,
+            fs.FLIGHT_SQL_SERVER_TRANSACTION,
+            fs.FLIGHT_SQL_SERVER_CANCEL,
+            fs.FLIGHT_SQL_SERVER_BULK_INGESTION,
+            fs.FLIGHT_SQL_SERVER_INGEST_TRANSACTIONS_SUPPORTED,
+        ]
+
+        table = _build_sql_info_table(current_capability_ids)
+
+        assert set(table.column("info_name").to_pylist()) == set(current_capability_ids)
+
+    def test_transaction_sql_info_ids_are_reported(self):
+        transaction_info_ids = [
+            fs.SQL_DEFAULT_TRANSACTION_ISOLATION,
+            fs.SQL_TRANSACTIONS_SUPPORTED,
+            fs.SQL_SUPPORTED_TRANSACTIONS_ISOLATION_LEVELS,
+            fs.SQL_DATA_DEFINITION_CAUSES_TRANSACTION_COMMIT,
+            fs.SQL_DATA_DEFINITIONS_IN_TRANSACTIONS_IGNORED,
+        ]
+
+        table = _build_sql_info_table(transaction_info_ids)
+        values = dict(
+            zip(
+                table.column("info_name").to_pylist(),
+                table.column("value").to_pylist(),
+                strict=True,
+            )
+        )
+
+        assert values[fs.SQL_DEFAULT_TRANSACTION_ISOLATION] == fs.SQL_TRANSACTION_SERIALIZABLE
+        assert values[fs.SQL_TRANSACTIONS_SUPPORTED] is True
+        assert values[fs.SQL_SUPPORTED_TRANSACTIONS_ISOLATION_LEVELS] == (
+            1 << fs.SQL_TRANSACTION_SERIALIZABLE
+        )
+        assert values[fs.SQL_DATA_DEFINITION_CAUSES_TRANSACTION_COMMIT] is False
+        assert values[fs.SQL_DATA_DEFINITIONS_IN_TRANSACTIONS_IGNORED] is False
 
     def test_empty_filter_returns_all(self):
         table1 = _build_sql_info_table(None)

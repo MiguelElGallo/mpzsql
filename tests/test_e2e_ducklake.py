@@ -44,6 +44,7 @@ import threading
 import time
 
 import adbc_driver_flightsql.dbapi as flightsql
+import adbc_driver_manager
 import duckdb
 import pyarrow as pa
 import pytest
@@ -183,6 +184,8 @@ def ducklake_conn(ducklake_server):
     """ADBC connection to the DuckLake-enabled server."""
     _srv, port = ducklake_server
     conn = flightsql.connect(f"grpc://127.0.0.1:{port}")
+    with contextlib.suppress(adbc_driver_manager.NotSupportedError):
+        conn.adbc_connection.set_autocommit(True)
     yield conn
     conn.close()
 
