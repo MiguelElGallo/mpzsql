@@ -310,6 +310,22 @@ class TestGetSchema:
             "table_schema",
         ]
 
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            fs.CommandGetImportedKeys(table="child"),
+            fs.CommandGetExportedKeys(table="parent"),
+        ],
+    )
+    def test_foreign_key_metadata_schema(self, server, ctx, cmd):
+        descriptor = _make_descriptor(cmd)
+
+        result = server.get_schema(ctx, descriptor)
+
+        assert isinstance(result, flight.SchemaResult)
+        assert "pk_table_name" in result.schema.names
+        assert "fk_table_name" in result.schema.names
+
 
 class TestGetFlightInfoCatalogs:
     def test_returns_catalogs_schema(self, server, ctx):

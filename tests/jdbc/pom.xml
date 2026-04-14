@@ -55,7 +55,6 @@
                     <systemPropertyVariables>
                         <flight.url>${flight.url}</flight.url>
                         <flight.user>${flight.user}</flight.user>
-                        <flight.password>${flight.password}</flight.password>
                         <live.azure.jdbc.required>${live.azure.jdbc.required}</live.azure.jdbc.required>
                         <tls.ca.cert>${tls.ca.cert}</tls.ca.cert>
                     </systemPropertyVariables>

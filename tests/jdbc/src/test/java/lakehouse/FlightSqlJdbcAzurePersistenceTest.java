@@ -5,14 +5,13 @@
  * <ul>
  *   <li>{@code flight.url} - e.g. {@code grpc+tls://ca-example.region.azurecontainerapps.io:443}</li>
  *   <li>{@code flight.user} - defaults to {@code lakehouse}</li>
- *   <li>{@code flight.password} - required</li>
+ *   <li>{@code FLIGHT_PASSWORD} environment variable - required</li>
  * </ul>
  *
  * <p>Run with:
  * <pre>
  *     mvn test -Dflight.url=grpc+tls://ca-example.region.azurecontainerapps.io:443 \
  *              -Dflight.user=lakehouse \
- *              -Dflight.password=... \
  *              -Dtest=FlightSqlJdbcAzurePersistenceTest
  * </pre>
  */
@@ -88,7 +87,7 @@ class FlightSqlJdbcAzurePersistenceTest {
 
     private static Connection connect() throws SQLException {
         String endpoint = System.getProperty("flight.url");
-        String password = System.getProperty("flight.password");
+        String password = System.getenv("FLIGHT_PASSWORD");
         String username = System.getProperty("flight.user", DEFAULT_USER);
         boolean required = Boolean.getBoolean("live.azure.jdbc.required");
         if (!isConfigured(username)) {
@@ -97,10 +96,10 @@ class FlightSqlJdbcAzurePersistenceTest {
 
         if (required) {
             assertTrue(isConfigured(endpoint), "flight.url is required");
-            assertTrue(isConfigured(password), "flight.password is required");
+            assertTrue(isConfigured(password), "FLIGHT_PASSWORD is required");
         } else {
             Assumptions.assumeTrue(isConfigured(endpoint), "flight.url is required");
-            Assumptions.assumeTrue(isConfigured(password), "flight.password is required");
+            Assumptions.assumeTrue(isConfigured(password), "FLIGHT_PASSWORD is required");
         }
 
         EndpointTarget target = parseEndpoint(endpoint);

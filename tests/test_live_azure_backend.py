@@ -208,12 +208,12 @@ def _run_live_jdbc_test(test_class: str) -> None:
                 "test",
                 f"-Dflight.url={endpoint}",
                 "-Dflight.user=lakehouse",
-                f"-Dflight.password={password}",
                 "-Dlive.azure.jdbc.required=true",
                 f"-Dtest={test_class}",
             ],
             cwd=_JDBC_DIR,
             capture_output=True,
+            env={**os.environ, "FLIGHT_PASSWORD": password},
             text=True,
             timeout=240,
         )

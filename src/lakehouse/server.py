@@ -936,7 +936,7 @@ class DuckDBFlightSqlServer(FlightSqlServer):
             return flight.SchemaResult(_SQL_INFO_SCHEMA)
         if isinstance(command, fs.CommandGetPrimaryKeys):
             return flight.SchemaResult(_PRIMARY_KEYS_SCHEMA)
-        if isinstance(command, fs.CommandGetImportedKeys | fs.CommandGetExportedKeys):
+        if isinstance(command, (fs.CommandGetImportedKeys, fs.CommandGetExportedKeys)):
             return flight.SchemaResult(_FK_KEYS_SCHEMA)
         if isinstance(command, fs.CommandGetCrossReference):
             return flight.SchemaResult(_FK_KEYS_SCHEMA)
