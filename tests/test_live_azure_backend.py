@@ -355,9 +355,7 @@ def test_deployed_container_app_persists_writes_after_disconnect():
 
             reader_conn = _connect_with_pyarrow_bootstrapped_bearer(endpoint, password)
             _set_autocommit_if_supported(reader_conn, True)
-            cursor = reader_conn.execute(
-                f"SELECT id, label FROM {fq_table_name} ORDER BY id"
-            )
+            cursor = reader_conn.execute(f"SELECT id, label FROM {fq_table_name} ORDER BY id")
 
             assert cursor.fetchall() == [(101, "alpha"), (202, "beta")]
         finally:

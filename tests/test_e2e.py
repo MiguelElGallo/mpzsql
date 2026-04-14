@@ -319,9 +319,7 @@ class TestE2EMetadata:
         )
         table = reader.read_all()
 
-        memory_catalog = next(
-            row for row in table.to_pylist() if row["catalog_name"] == "memory"
-        )
+        memory_catalog = next(row for row in table.to_pylist() if row["catalog_name"] == "memory")
         schemas = memory_catalog["catalog_db_schemas"]
         assert schemas == [{"db_schema_name": "main", "db_schema_tables": None}]
 
@@ -332,9 +330,7 @@ class TestE2EMetadata:
         )
         table = reader.read_all()
 
-        memory_catalog = next(
-            row for row in table.to_pylist() if row["catalog_name"] == "memory"
-        )
+        memory_catalog = next(row for row in table.to_pylist() if row["catalog_name"] == "memory")
         tables = memory_catalog["catalog_db_schemas"][0]["db_schema_tables"]
         assert tables == [
             {
