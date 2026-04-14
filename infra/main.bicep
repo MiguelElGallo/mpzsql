@@ -77,7 +77,8 @@ param ducklakeDataPath string = 'az://lakehouse/data/'
 param lakehousePassword string = newGuid()
 
 @secure()
-@description('Stable HMAC/JWT signing key for the Flight SQL server.')
+@minLength(1)
+@description('Stable non-empty UTF-8 HMAC/JWT signing key for the Flight SQL server.')
 param lakehouseSecretKey string
 
 var uniqueSuffix = toLower(uniqueString(subscription().id, resourceGroup().id, environmentName))

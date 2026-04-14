@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "15348540282949668332"
+      "templateHash": "8435078362355386948"
     }
   },
   "parameters": {
@@ -155,8 +155,9 @@
     },
     "lakehouseSecretKey": {
       "type": "securestring",
+      "minLength": 1,
       "metadata": {
-        "description": "Stable HMAC/JWT signing key for the Flight SQL server."
+        "description": "Stable non-empty UTF-8 HMAC/JWT signing key for the Flight SQL server."
       }
     }
   },
