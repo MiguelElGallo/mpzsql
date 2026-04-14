@@ -35,7 +35,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 
 from lakehouse.dispatch import FlightSqlServer
-from lakehouse.proto import fs, pack_any
+from lakehouse.proto import fs, pack_any, unpack_any
 from lakehouse.session import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -324,8 +324,8 @@ _TABLES_SCHEMA = pa.schema(
     [
         pa.field("catalog_name", pa.utf8()),
         pa.field("db_schema_name", pa.utf8()),
-        pa.field("table_name", pa.utf8()),
-        pa.field("table_type", pa.utf8()),
+        pa.field("table_name", pa.utf8(), nullable=False),
+        pa.field("table_type", pa.utf8(), nullable=False),
     ]
 )
 
@@ -333,13 +333,13 @@ _TABLES_SCHEMA_WITH_SCHEMA = pa.schema(
     [
         pa.field("catalog_name", pa.utf8()),
         pa.field("db_schema_name", pa.utf8()),
-        pa.field("table_name", pa.utf8()),
-        pa.field("table_type", pa.utf8()),
-        pa.field("table_schema", pa.binary()),
+        pa.field("table_name", pa.utf8(), nullable=False),
+        pa.field("table_type", pa.utf8(), nullable=False),
+        pa.field("table_schema", pa.binary(), nullable=False),
     ]
 )
 
-_TABLE_TYPES_SCHEMA = pa.schema([pa.field("table_type", pa.utf8())])
+_TABLE_TYPES_SCHEMA = pa.schema([pa.field("table_type", pa.utf8(), nullable=False)])
 
 _PRIMARY_KEYS_SCHEMA = pa.schema(
     [
@@ -726,24 +726,31 @@ _SQL_INFO_SCHEMA = pa.schema(
     ]
 )
 
-# SqlInfo enum constants (matching Flight SQL protobuf values)
-_FLIGHT_SQL_SERVER_NAME = 0
-_FLIGHT_SQL_SERVER_VERSION = 1
-_FLIGHT_SQL_SERVER_ARROW_VERSION = 2
-_FLIGHT_SQL_SERVER_READ_ONLY = 500
-_FLIGHT_SQL_SERVER_SQL = 501
-_FLIGHT_SQL_SERVER_SUBSTRAIT = 502
-_FLIGHT_SQL_SERVER_TRANSACTION = 504
-_FLIGHT_SQL_SERVER_CANCEL = 505
-_FLIGHT_SQL_SERVER_BULK_INGESTION = 507
-_FLIGHT_SQL_SERVER_INGEST_TRANSACTIONS_SUPPORTED = 508
-_FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT = 100
-_FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT = 101
-_SQL_DDL_CATALOG = 500
-_SQL_DDL_SCHEMA = 501
-_SQL_DDL_TABLE = 502
-_SQL_IDENTIFIER_QUOTE_CHAR = 503
-_SQL_IDENTIFIER_CASE = 504
+# SqlInfo enum constants (matching the generated Flight SQL protobuf values)
+_FLIGHT_SQL_SERVER_NAME = fs.FLIGHT_SQL_SERVER_NAME
+_FLIGHT_SQL_SERVER_VERSION = fs.FLIGHT_SQL_SERVER_VERSION
+_FLIGHT_SQL_SERVER_ARROW_VERSION = fs.FLIGHT_SQL_SERVER_ARROW_VERSION
+_FLIGHT_SQL_SERVER_READ_ONLY = fs.FLIGHT_SQL_SERVER_READ_ONLY
+_FLIGHT_SQL_SERVER_SQL = fs.FLIGHT_SQL_SERVER_SQL
+_FLIGHT_SQL_SERVER_SUBSTRAIT = fs.FLIGHT_SQL_SERVER_SUBSTRAIT
+_FLIGHT_SQL_SERVER_TRANSACTION = fs.FLIGHT_SQL_SERVER_TRANSACTION
+_FLIGHT_SQL_SERVER_CANCEL = fs.FLIGHT_SQL_SERVER_CANCEL
+_FLIGHT_SQL_SERVER_BULK_INGESTION = fs.FLIGHT_SQL_SERVER_BULK_INGESTION
+_FLIGHT_SQL_SERVER_INGEST_TRANSACTIONS_SUPPORTED = (
+    fs.FLIGHT_SQL_SERVER_INGEST_TRANSACTIONS_SUPPORTED
+)
+_FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT = fs.FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT
+_FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT = fs.FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT
+_SQL_DDL_CATALOG = fs.SQL_DDL_CATALOG
+_SQL_DDL_SCHEMA = fs.SQL_DDL_SCHEMA
+_SQL_DDL_TABLE = fs.SQL_DDL_TABLE
+_SQL_IDENTIFIER_CASE = fs.SQL_IDENTIFIER_CASE
+_SQL_IDENTIFIER_QUOTE_CHAR = fs.SQL_IDENTIFIER_QUOTE_CHAR
+_SQL_DEFAULT_TRANSACTION_ISOLATION = fs.SQL_DEFAULT_TRANSACTION_ISOLATION
+_SQL_TRANSACTIONS_SUPPORTED = fs.SQL_TRANSACTIONS_SUPPORTED
+_SQL_SUPPORTED_TRANSACTIONS_ISOLATION_LEVELS = fs.SQL_SUPPORTED_TRANSACTIONS_ISOLATION_LEVELS
+_SQL_DATA_DEFINITION_CAUSES_TRANSACTION_COMMIT = fs.SQL_DATA_DEFINITION_CAUSES_TRANSACTION_COMMIT
+_SQL_DATA_DEFINITIONS_IN_TRANSACTIONS_IGNORED = fs.SQL_DATA_DEFINITIONS_IN_TRANSACTIONS_IGNORED
 
 
 def _build_sql_info_table(
@@ -764,12 +771,25 @@ def _build_sql_info_table(
         (_FLIGHT_SQL_SERVER_READ_ONLY, 1, False),
         (_FLIGHT_SQL_SERVER_SQL, 1, True),
         (_FLIGHT_SQL_SERVER_SUBSTRAIT, 1, False),
-        (_FLIGHT_SQL_SERVER_TRANSACTION, 2, 1),  # TRANSACTION supported
+        (
+            _FLIGHT_SQL_SERVER_TRANSACTION,
+            3,
+            fs.SQL_SUPPORTED_TRANSACTION_TRANSACTION,
+        ),
         (_FLIGHT_SQL_SERVER_CANCEL, 1, True),
         (_FLIGHT_SQL_SERVER_BULK_INGESTION, 1, True),
         (_FLIGHT_SQL_SERVER_INGEST_TRANSACTIONS_SUPPORTED, 1, True),
         (_FLIGHT_SQL_SERVER_STATEMENT_TIMEOUT, 3, 0),  # no timeout
         (_FLIGHT_SQL_SERVER_TRANSACTION_TIMEOUT, 3, 0),  # no timeout
+        (_SQL_DEFAULT_TRANSACTION_ISOLATION, 3, fs.SQL_TRANSACTION_SERIALIZABLE),
+        (_SQL_TRANSACTIONS_SUPPORTED, 1, True),
+        (
+            _SQL_SUPPORTED_TRANSACTIONS_ISOLATION_LEVELS,
+            3,
+            1 << fs.SQL_TRANSACTION_SERIALIZABLE,
+        ),
+        (_SQL_DATA_DEFINITION_CAUSES_TRANSACTION_COMMIT, 1, False),
+        (_SQL_DATA_DEFINITIONS_IN_TRANSACTIONS_IGNORED, 1, False),
     ]
 
     # Filter if specific IDs requested
@@ -875,6 +895,54 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         self._sessions.close_all()
         self._db.close()
         super().shutdown()
+
+    def get_schema(
+        self,
+        context: flight.ServerCallContext,
+        descriptor: flight.FlightDescriptor,
+    ) -> flight.SchemaResult:
+        """Return the schema for supported Flight SQL descriptors.
+
+        ``GetSchema`` must be side-effect-free.  In particular, prepared
+        statements with empty schemas can be DDL/DML; do not route through
+        ``get_flight_info_prepared_statement`` because that method eagerly
+        executes such statements for ADBC query execution compatibility.
+        """
+        command = unpack_any(descriptor.command)
+
+        if isinstance(command, fs.CommandStatementQuery):
+            conn = self._get_session(context)
+            schema_query = f"SELECT * FROM ({command.query}) AS __schema_probe LIMIT 0"
+            return flight.SchemaResult(_execute_query(conn, schema_query).schema)
+
+        if isinstance(command, fs.CommandPreparedStatementQuery):
+            session_id = _get_session_id(context)
+            handle = command.prepared_statement_handle.decode("utf-8")
+            meta = self._prepared_meta.get((session_id, handle))
+            return flight.SchemaResult(meta.schema if meta is not None else pa.schema([]))
+
+        if isinstance(command, fs.CommandGetCatalogs):
+            return flight.SchemaResult(_CATALOGS_SCHEMA)
+        if isinstance(command, fs.CommandGetDbSchemas):
+            return flight.SchemaResult(_DB_SCHEMAS_SCHEMA)
+        if isinstance(command, fs.CommandGetTables):
+            schema = _TABLES_SCHEMA_WITH_SCHEMA if command.include_schema else _TABLES_SCHEMA
+            return flight.SchemaResult(schema)
+        if isinstance(command, fs.CommandGetTableTypes):
+            return flight.SchemaResult(_TABLE_TYPES_SCHEMA)
+        if isinstance(command, fs.CommandGetXdbcTypeInfo):
+            return flight.SchemaResult(_XDBC_TYPE_INFO_SCHEMA)
+        if isinstance(command, fs.CommandGetSqlInfo):
+            return flight.SchemaResult(_SQL_INFO_SCHEMA)
+        if isinstance(command, fs.CommandGetPrimaryKeys):
+            return flight.SchemaResult(_PRIMARY_KEYS_SCHEMA)
+        if isinstance(command, (fs.CommandGetImportedKeys, fs.CommandGetExportedKeys)):
+            return flight.SchemaResult(_FK_KEYS_SCHEMA)
+        if isinstance(command, fs.CommandGetCrossReference):
+            return flight.SchemaResult(_FK_KEYS_SCHEMA)
+
+        msg = f"Unsupported Flight SQL command for get_schema: {type(command).__name__}"
+        raise NotImplementedError(msg)
 
     # ═══════════════════════════════════════════════════════════════════════
     #  get_flight_info handlers
