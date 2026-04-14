@@ -66,6 +66,7 @@ azd env set POSTGRES_ENTRA_ADMIN_OBJECT_ID "<your-entra-object-id>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME "<your-entra-upn>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE "User"
 azd env set DUCKLAKE_DATA_PATH "az://lakehouse/data/"
+azd env set LAKEHOUSE_SECRET_KEY "$(openssl rand -base64 32)"
 ```
 
 Find the Entra values if you need them:
@@ -93,6 +94,7 @@ azd env set POSTGRES_ENTRA_ADMIN_OBJECT_ID "<your-entra-object-id>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_NAME "<your-entra-upn>"
 azd env set POSTGRES_ENTRA_ADMIN_PRINCIPAL_TYPE "User"
 azd env set DUCKLAKE_DATA_PATH "az://lakehouse/data/"
+azd env set LAKEHOUSE_SECRET_KEY "$(openssl rand -base64 32)"
 
 azd up
 ```
@@ -133,6 +135,25 @@ mvn -q -Dexec.mainClass=lakehouse.AzureDemo test-compile exec:java
 ```
 
 The `MAVEN_OPTS` flag is required for Apache Arrow on Java 17+.
+
+### Run the live backend tests
+
+The live backend pytest is opt-in because it queries the deployed Azure Container App and reads the `lakehouse-password` secret from Key Vault:
+
+```bash
+LAKEHOUSE_LIVE_BACKEND=1 uv run pytest -q tests/test_live_azure_backend.py
+```
+
+That default path uses PyArrow to perform the Basic-token handshake, then gives the returned Bearer token to ADBC for the query. It verifies the deployed endpoint, TLS, Key Vault password, and Bearer auth path.
+
+There is also a separate opt-in check for ADBC's direct Basic-auth path:
+
+```bash
+LAKEHOUSE_LIVE_BACKEND=1 LAKEHOUSE_LIVE_BACKEND_ADBC_BASIC=1 \
+  uv run pytest -q tests/test_live_azure_backend.py
+```
+
+The ADBC Basic check is marked `xfail` because that is the known client path currently failing against the deployed Container App. A result such as `1 passed, 1 xfailed` means the supported bearer smoke test passed and the tracked ADBC Basic issue reproduced as expected. If that changes to `1 passed, 1 xpassed`, the ADBC Basic path has started working and the `xfail` marker should be removed.
 
 If you want one copy/paste block for the demo itself:
 

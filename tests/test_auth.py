@@ -18,6 +18,7 @@ from lakehouse.auth import (
     BearerAuthServerMiddleware,
     BearerAuthServerMiddlewareFactory,
     NoOpAuthHandler,
+    RequiredAuthServerMiddlewareFactory,
     _get_header,
     _parse_basic_header,
 )
@@ -61,6 +62,12 @@ def bearer_factory():
 def access_factory():
     """AccessLogMiddlewareFactory instance."""
     return AccessLogMiddlewareFactory()
+
+
+@pytest.fixture
+def required_auth_factory():
+    """RequiredAuthServerMiddlewareFactory instance."""
+    return RequiredAuthServerMiddlewareFactory()
 
 
 @pytest.fixture
@@ -362,6 +369,39 @@ class TestBearerAuthServerMiddleware:
         mw = BearerAuthServerMiddleware(payload=payload)
         assert mw.payload["sub"] == "alice"
         assert mw.payload["role"] == "admin"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  RequiredAuthServerMiddlewareFactory
+# ═══════════════════════════════════════════════════════════════════════════
+class TestRequiredAuthFactoryStartCall:
+    """Tests for RequiredAuthServerMiddlewareFactory.start_call()."""
+
+    def test_missing_auth_header_rejected(self, required_auth_factory, call_info):
+        """No authorization header is rejected when auth is required."""
+        with pytest.raises(
+            flight.FlightUnauthenticatedError,
+            match="Authorization header is required",
+        ):
+            required_auth_factory.start_call(call_info, {})
+
+    def test_basic_auth_header_allowed(self, required_auth_factory, call_info):
+        """Basic auth is allowed for BasicAuthServerMiddlewareFactory to validate."""
+        headers = _make_basic_header(USERNAME, PASSWORD)
+        assert required_auth_factory.start_call(call_info, headers) is None
+
+    def test_bearer_auth_header_allowed(self, required_auth_factory, call_info):
+        """Bearer auth is allowed for BearerAuthServerMiddlewareFactory to validate."""
+        headers = _make_bearer_header("jwt")
+        assert required_auth_factory.start_call(call_info, headers) is None
+
+    def test_unsupported_auth_scheme_rejected(self, required_auth_factory, call_info):
+        """Unsupported authorization schemes are rejected."""
+        with pytest.raises(
+            flight.FlightUnauthenticatedError,
+            match="Unsupported authorization scheme",
+        ):
+            required_auth_factory.start_call(call_info, {"authorization": ["Token abc"]})
 
 
 # ═══════════════════════════════════════════════════════════════════════════

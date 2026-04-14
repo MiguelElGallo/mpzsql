@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "7370216803261364591"
+      "templateHash": "15348540282949668332"
     }
   },
   "parameters": {
@@ -151,6 +151,12 @@
       "defaultValue": "[newGuid()]",
       "metadata": {
         "description": "Auto-generated Flight SQL password. Random on each fresh provision."
+      }
+    },
+    "lakehouseSecretKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Stable HMAC/JWT signing key for the Flight SQL server."
       }
     }
   },
@@ -511,6 +517,9 @@
           },
           "lakehousePassword": {
             "value": "[parameters('lakehousePassword')]"
+          },
+          "lakehouseSecretKey": {
+            "value": "[parameters('lakehouseSecretKey')]"
           }
         },
         "template": {
@@ -520,7 +529,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "15964644140239373440"
+              "templateHash": "1804434252725837723"
             }
           },
           "parameters": {
@@ -553,6 +562,12 @@
               "type": "securestring",
               "metadata": {
                 "description": "Flight SQL password to store in the vault."
+              }
+            },
+            "lakehouseSecretKey": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Flight SQL HMAC/JWT signing key to store in the vault."
               }
             }
           },
@@ -622,6 +637,21 @@
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.KeyVault/vaults/secrets",
+              "apiVersion": "2023-07-01",
+              "name": "[format('{0}/{1}', parameters('keyVaultName'), 'lakehouse-secret-key')]",
+              "properties": {
+                "value": "[parameters('lakehouseSecretKey')]",
+                "contentType": "text/plain",
+                "attributes": {
+                  "enabled": true
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -636,6 +666,10 @@
             "lakehousePasswordSecretUri": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'lakehouse-password'), '2023-07-01').secretUri]"
+            },
+            "lakehouseSecretKeySecretUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults/secrets', parameters('keyVaultName'), 'lakehouse-secret-key'), '2023-07-01').secretUri]"
             }
           }
         }
@@ -809,6 +843,9 @@
           },
           "lakehousePasswordSecretUri": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2025-04-01').outputs.lakehousePasswordSecretUri.value]"
+          },
+          "lakehouseSecretKeySecretUri": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'keyvault'), '2025-04-01').outputs.lakehouseSecretKeySecretUri.value]"
           }
         },
         "template": {
@@ -818,7 +855,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "6413779264902107673"
+              "templateHash": "7408886526487755529"
             }
           },
           "parameters": {
@@ -868,6 +905,12 @@
               "type": "string",
               "metadata": {
                 "description": "Key Vault secret URI for the Flight SQL password."
+              }
+            },
+            "lakehouseSecretKeySecretUri": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault secret URI for the Flight SQL HMAC/JWT signing key."
               }
             }
           },
@@ -930,6 +973,11 @@
                       "name": "lakehouse-password",
                       "keyVaultUrl": "[parameters('lakehousePasswordSecretUri')]",
                       "identity": "[parameters('containerAppIdentityId')]"
+                    },
+                    {
+                      "name": "lakehouse-secret-key",
+                      "keyVaultUrl": "[parameters('lakehouseSecretKeySecretUri')]",
+                      "identity": "[parameters('containerAppIdentityId')]"
                     }
                   ],
                   "registries": [
@@ -981,6 +1029,10 @@
                         {
                           "name": "LAKEHOUSE_PASSWORD",
                           "secretRef": "lakehouse-password"
+                        },
+                        {
+                          "name": "LAKEHOUSE_SECRET_KEY",
+                          "secretRef": "lakehouse-secret-key"
                         }
                       ],
                       "probes": [

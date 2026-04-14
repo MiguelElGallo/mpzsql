@@ -14,6 +14,10 @@ param deployerPrincipalId string = ''
 @description('Flight SQL password to store in the vault.')
 param lakehousePassword string
 
+@secure()
+@description('Flight SQL HMAC/JWT signing key to store in the vault.')
+param lakehouseSecretKey string
+
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
   location: location
@@ -76,9 +80,26 @@ resource lakehousePasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' 
   }
 }
 
+// ── Secret: lakehouse-secret-key ────────────────────────────────────────
+resource lakehouseSecretKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'lakehouse-secret-key'
+  properties: {
+    value: lakehouseSecretKey
+    contentType: 'text/plain'
+    attributes: {
+      enabled: true
+    }
+  }
+}
+
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
 
 // URI only (no secret value) — safe to expose for Container App Key Vault references.
 #disable-next-line outputs-should-not-contain-secrets
 output lakehousePasswordSecretUri string = lakehousePasswordSecret.properties.secretUri
+
+// URI only (no secret value) — safe to expose for Container App Key Vault references.
+#disable-next-line outputs-should-not-contain-secrets
+output lakehouseSecretKeySecretUri string = lakehouseSecretKeySecret.properties.secretUri

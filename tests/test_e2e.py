@@ -49,6 +49,7 @@ from lakehouse.auth import (
     AccessLogMiddlewareFactory,
     BasicAuthServerMiddlewareFactory,
     BearerAuthServerMiddlewareFactory,
+    RequiredAuthServerMiddlewareFactory,
 )
 from lakehouse.health import BackgroundHealthPoller, HealthServer
 from lakehouse.security import hash_password
@@ -153,6 +154,7 @@ def auth_server():
         "bearer-auth": BearerAuthServerMiddlewareFactory(
             secret_key=_TEST_SECRET,
         ),
+        "required-auth": RequiredAuthServerMiddlewareFactory(),
     }
 
     srv = DuckDBFlightSqlServer(
@@ -363,7 +365,7 @@ class TestE2EAuth:
         """Connection with wrong password is rejected."""
         _srv, port = auth_server
         bad_token = base64.b64encode(f"{_TEST_USERNAME}:wrong-password".encode()).decode()
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(Exception, match=r"UNAUTHENTICATED|Invalid credentials"):
             conn = flightsql.connect(
                 f"grpc://127.0.0.1:{port}",
                 db_kwargs={
@@ -372,6 +374,19 @@ class TestE2EAuth:
                     ),
                 },
             )
+            cursor = conn.execute("SELECT 1")
+            cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+    def test_missing_auth_rejected(self, auth_server):
+        """Connection without an auth header is rejected."""
+        _srv, port = auth_server
+        with pytest.raises(
+            Exception,
+            match=r"UNAUTHENTICATED|Authorization header is required",
+        ):
+            conn = flightsql.connect(f"grpc://127.0.0.1:{port}")
             cursor = conn.execute("SELECT 1")
             cursor.fetchall()
             cursor.close()

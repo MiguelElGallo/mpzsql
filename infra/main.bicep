@@ -76,6 +76,10 @@ param ducklakeDataPath string = 'az://lakehouse/data/'
 @description('Auto-generated Flight SQL password. Random on each fresh provision.')
 param lakehousePassword string = newGuid()
 
+@secure()
+@description('Stable HMAC/JWT signing key for the Flight SQL server.')
+param lakehouseSecretKey string
+
 var uniqueSuffix = toLower(uniqueString(subscription().id, resourceGroup().id, environmentName))
 var storageAccountName = 'st${uniqueSuffix}'
 var postgresServerName = toLower('psql-${environmentName}-${substring(uniqueSuffix, 0, 6)}')
@@ -126,6 +130,7 @@ module keyvault './modules/keyvault.bicep' = {
     containerAppPrincipalId: containerAppIdentity.properties.principalId
     deployerPrincipalId: postgresEntraAdminObjectId
     lakehousePassword: lakehousePassword
+    lakehouseSecretKey: lakehouseSecretKey
   }
 }
 
@@ -156,6 +161,7 @@ module containerApp './modules/container-app.bicep' = {
     ducklakeDataPath: ducklakeDataPath
     acrLoginServer: acr.outputs.acrLoginServer
     lakehousePasswordSecretUri: keyvault.outputs.lakehousePasswordSecretUri
+    lakehouseSecretKeySecretUri: keyvault.outputs.lakehouseSecretKeySecretUri
   }
 }
 

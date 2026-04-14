@@ -16,6 +16,9 @@ param acrLoginServer string
 @description('Key Vault secret URI for the Flight SQL password.')
 param lakehousePasswordSecretUri string
 
+@description('Key Vault secret URI for the Flight SQL HMAC/JWT signing key.')
+param lakehouseSecretKeySecretUri string
+
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   name: 'law-${containerAppsEnvironmentName}'
   location: location
@@ -68,6 +71,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           keyVaultUrl: lakehousePasswordSecretUri
           identity: containerAppIdentityId
         }
+        {
+          name: 'lakehouse-secret-key'
+          keyVaultUrl: lakehouseSecretKeySecretUri
+          identity: containerAppIdentityId
+        }
       ]
       registries: [
         {
@@ -118,6 +126,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'LAKEHOUSE_PASSWORD'
               secretRef: 'lakehouse-password'
+            }
+            {
+              name: 'LAKEHOUSE_SECRET_KEY'
+              secretRef: 'lakehouse-secret-key'
             }
           ]
           probes: [
