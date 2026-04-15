@@ -479,7 +479,26 @@ def server_with_attached_catalog(ctx):
     srv._prepared_meta = {}
 
     conn = srv._get_session(ctx)
-    conn.execute('CREATE TABLE "lakehouse".main.alias_table (id INT)')
+    conn.execute('CREATE TABLE "lakehouse".main.alias_table (id INT PRIMARY KEY)')
+    return srv
+
+
+@pytest.fixture
+def server_with_attached_fk_catalog(ctx):
+    srv = DuckDBFlightSqlServer.__new__(DuckDBFlightSqlServer)
+    srv._db = duckdb.connect(":memory:")
+    srv._db.execute("ATTACH ':memory:' AS lakehouse")
+
+    from lakehouse.session import SessionManager
+
+    srv._sessions = SessionManager(srv._db, ducklake_alias="lakehouse")
+    srv._prepared_meta = {}
+
+    conn = srv._get_session(ctx)
+    conn.execute("USE lakehouse.main")
+    conn.execute("CREATE TABLE parent (id INT PRIMARY KEY)")
+    conn.execute("CREATE TABLE child (fk INT REFERENCES parent(id))")
+    conn.execute("USE memory.main")
     return srv
 
 
@@ -522,6 +541,60 @@ class TestCataloglessMetadataWithAttachedCatalog:
         assert table.num_rows == 1
         assert table.column("catalog_name")[0].as_py() == "lakehouse"
         assert table.column("table_name")[0].as_py() == "alias_table"
+
+
+class TestCataloglessKeyMetadataWithAttachedCatalog:
+    def test_primary_keys_handler_accepts_catalogless_attached_catalog(self, server_with_attached_catalog, ctx):
+        cmd = fs.CommandGetPrimaryKeys(table="alias_table", db_schema="main")
+        with patch("lakehouse.server._record_batch_stream", side_effect=lambda table: table) as stream_factory:
+            table = server_with_attached_catalog.do_get_primary_keys(ctx, cmd)
+
+        assert stream_factory.call_count == 1
+        assert isinstance(table, pa.Table)
+        assert table.num_rows == 1
+        assert table.column("catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("schema_name")[0].as_py() == "main"
+        assert table.column("table_name")[0].as_py() == "alias_table"
+        assert table.column("column_name")[0].as_py() == "id"
+
+    def test_imported_keys_handler_accepts_catalogless_attached_catalog(self, server_with_attached_fk_catalog, ctx):
+        cmd = fs.CommandGetImportedKeys(table="child", db_schema="main")
+        with patch("lakehouse.server._record_batch_stream", side_effect=lambda table: table) as stream_factory:
+            table = server_with_attached_fk_catalog.do_get_imported_keys(ctx, cmd)
+
+        assert stream_factory.call_count == 1
+        assert isinstance(table, pa.Table)
+        assert table.num_rows == 1
+        assert table.column("pk_catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("fk_catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("pk_table_name")[0].as_py() == "parent"
+        assert table.column("fk_table_name")[0].as_py() == "child"
+
+    def test_exported_keys_handler_accepts_catalogless_attached_catalog(self, server_with_attached_fk_catalog, ctx):
+        cmd = fs.CommandGetExportedKeys(table="parent", db_schema="main")
+        with patch("lakehouse.server._record_batch_stream", side_effect=lambda table: table) as stream_factory:
+            table = server_with_attached_fk_catalog.do_get_exported_keys(ctx, cmd)
+
+        assert stream_factory.call_count == 1
+        assert isinstance(table, pa.Table)
+        assert table.num_rows == 1
+        assert table.column("pk_catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("fk_catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("pk_table_name")[0].as_py() == "parent"
+        assert table.column("fk_table_name")[0].as_py() == "child"
+
+    def test_cross_reference_handler_accepts_catalogless_attached_catalog(self, server_with_attached_fk_catalog, ctx):
+        cmd = fs.CommandGetCrossReference(pk_table="parent", fk_table="child", pk_db_schema="main", fk_db_schema="main")
+        with patch("lakehouse.server._record_batch_stream", side_effect=lambda table: table) as stream_factory:
+            table = server_with_attached_fk_catalog.do_get_cross_reference(ctx, cmd)
+
+        assert stream_factory.call_count == 1
+        assert isinstance(table, pa.Table)
+        assert table.num_rows == 1
+        assert table.column("pk_catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("fk_catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("pk_table_name")[0].as_py() == "parent"
+        assert table.column("fk_table_name")[0].as_py() == "child"
 
     def test_filters_by_table_type_view(self, server_with_data, ctx):
         cmd = fs.CommandGetTables(table_types=["VIEW"])

@@ -1257,12 +1257,9 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         params: list[object] = []
         query = _PRIMARY_KEYS_QUERY_BASE
 
-        query += " AND catalog_name = "
         if command.catalog:
-            query += "?"
+            query += " AND catalog_name = ?"
             params.append(command.catalog)
-        else:
-            query += "CURRENT_DATABASE()"
 
         if command.db_schema:
             query += " AND schema_name LIKE ?"
@@ -1287,12 +1284,9 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         filter_parts = ["fk_table_name = ?"]
         params: list[object] = [command.table]
 
-        filter_parts.append("fk_catalog_name = ")
         if command.catalog:
-            filter_parts[-1] += "?"
+            filter_parts.append("fk_catalog_name = ?")
             params.append(command.catalog)
-        else:
-            filter_parts[-1] += "CURRENT_DATABASE()"
 
         if command.db_schema:
             filter_parts.append("fk_schema_name = ?")
@@ -1316,12 +1310,9 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         filter_parts = ["pk_table_name = ?"]
         params: list[object] = [command.table]
 
-        filter_parts.append("pk_catalog_name = ")
         if command.catalog:
-            filter_parts[-1] += "?"
+            filter_parts.append("pk_catalog_name = ?")
             params.append(command.catalog)
-        else:
-            filter_parts[-1] += "CURRENT_DATABASE()"
 
         if command.db_schema:
             filter_parts.append("pk_schema_name = ?")
@@ -1345,12 +1336,9 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         filter_parts = ["pk_table_name = ?"]
         params: list[object] = [command.pk_table]
 
-        filter_parts.append("pk_catalog_name = ")
         if command.pk_catalog:
-            filter_parts[-1] += "?"
+            filter_parts.append("pk_catalog_name = ?")
             params.append(command.pk_catalog)
-        else:
-            filter_parts[-1] += "CURRENT_DATABASE()"
 
         if command.pk_db_schema:
             filter_parts.append("pk_schema_name = ?")
@@ -1359,12 +1347,9 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         filter_parts.append("fk_table_name = ?")
         params.append(command.fk_table)
 
-        filter_parts.append("fk_catalog_name = ")
         if command.fk_catalog:
-            filter_parts[-1] += "?"
+            filter_parts.append("fk_catalog_name = ?")
             params.append(command.fk_catalog)
-        else:
-            filter_parts[-1] += "CURRENT_DATABASE()"
 
         if command.fk_db_schema:
             filter_parts.append("fk_schema_name = ?")
