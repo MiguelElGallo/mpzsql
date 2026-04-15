@@ -289,6 +289,7 @@ class FlightSqlJdbcTest {
             assertTrue(sawCatalog, "catalog list should include " + ALIAS);
 
             boolean sawSchema = false;
+            boolean sawSchemaWithoutCatalog = false;
             try (ResultSet rs = meta.getSchemas(ALIAS, SCHEMA)) {
                 while (rs.next()) {
                     if (ALIAS.equals(rs.getString("TABLE_CATALOG"))
@@ -306,6 +307,25 @@ class FlightSqlJdbcTest {
                 assertEquals(SCHEMA, rs.getString("TABLE_SCHEM"));
                 assertEquals(t, rs.getString("TABLE_NAME"));
                 assertEquals("BASE TABLE", rs.getString("TABLE_TYPE"));
+                assertFalse(rs.next());
+            }
+
+            try (ResultSet rs = meta.getSchemas(null, SCHEMA)) {
+                while (rs.next()) {
+                    if (ALIAS.equals(rs.getString("TABLE_CATALOG"))
+                            && SCHEMA.equals(rs.getString("TABLE_SCHEM"))) {
+                        sawSchemaWithoutCatalog = true;
+                        break;
+                    }
+                }
+            }
+            assertTrue(sawSchemaWithoutCatalog, "schema list without catalog should include " + ALIAS + "." + SCHEMA);
+
+            try (ResultSet rs = meta.getTables(null, SCHEMA, t, new String[] {"BASE TABLE"})) {
+                assertTrue(rs.next());
+                assertEquals(ALIAS, rs.getString("TABLE_CAT"));
+                assertEquals(SCHEMA, rs.getString("TABLE_SCHEM"));
+                assertEquals(t, rs.getString("TABLE_NAME"));
                 assertFalse(rs.next());
             }
 

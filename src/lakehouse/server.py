@@ -284,12 +284,9 @@ def _prepare_get_tables_query(
         "table_name, table_type FROM information_schema.tables WHERE 1 = 1"
     )
 
-    query += " AND table_catalog = "
     if command.catalog:
-        query += "?"
+        query += " AND table_catalog = ?"
         params.append(command.catalog)
-    else:
-        query += "CURRENT_DATABASE()"
 
     if command.db_schema_filter_pattern:
         query += " AND table_schema LIKE ?"
@@ -1186,12 +1183,9 @@ class DuckDBFlightSqlServer(FlightSqlServer):
         params: list[object] = []
         query = _DB_SCHEMAS_QUERY_BASE
 
-        query += " AND catalog_name = "
         if command.catalog:
-            query += "?"
+            query += " AND catalog_name = ?"
             params.append(command.catalog)
-        else:
-            query += "CURRENT_DATABASE()"
 
         if command.db_schema_filter_pattern:
             query += " AND schema_name LIKE ?"

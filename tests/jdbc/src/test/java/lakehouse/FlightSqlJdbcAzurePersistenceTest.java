@@ -232,6 +232,7 @@ class FlightSqlJdbcAzurePersistenceTest {
                 assertTrue(sawCatalog, "catalog list should include " + ALIAS);
 
                 boolean sawSchema = false;
+                boolean sawSchemaWithoutCatalog = false;
                 try (ResultSet rs = meta.getSchemas(ALIAS, SCHEMA)) {
                     while (rs.next()) {
                         if (ALIAS.equals(rs.getString("TABLE_CATALOG"))
@@ -243,7 +244,29 @@ class FlightSqlJdbcAzurePersistenceTest {
                 }
                 assertTrue(sawSchema, "schema list should include " + ALIAS + "." + SCHEMA);
 
+                try (ResultSet rs = meta.getSchemas(null, SCHEMA)) {
+                    while (rs.next()) {
+                        if (ALIAS.equals(rs.getString("TABLE_CATALOG"))
+                                && SCHEMA.equals(rs.getString("TABLE_SCHEM"))) {
+                            sawSchemaWithoutCatalog = true;
+                            break;
+                        }
+                    }
+                }
+                assertTrue(
+                        sawSchemaWithoutCatalog,
+                        "schema list without catalog should include " + ALIAS + "." + SCHEMA
+                );
+
                 try (ResultSet rs = meta.getTables(ALIAS, SCHEMA, table, new String[] {"BASE TABLE"})) {
+                    assertTrue(rs.next());
+                    assertEquals(ALIAS, rs.getString("TABLE_CAT"));
+                    assertEquals(SCHEMA, rs.getString("TABLE_SCHEM"));
+                    assertEquals(table, rs.getString("TABLE_NAME"));
+                    assertFalse(rs.next());
+                }
+
+                try (ResultSet rs = meta.getTables(null, SCHEMA, table, new String[] {"BASE TABLE"})) {
                     assertTrue(rs.next());
                     assertEquals(ALIAS, rs.getString("TABLE_CAT"));
                     assertEquals(SCHEMA, rs.getString("TABLE_SCHEM"));

@@ -14,7 +14,7 @@ read from the stream object.  The handler return type is asserted as
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import duckdb
 import pyarrow as pa
@@ -176,7 +176,7 @@ class TestPrepareGetTablesQuery:
     def test_no_filters(self):
         cmd = fs.CommandGetTables()
         query, params = _prepare_get_tables_query(cmd)
-        assert "CURRENT_DATABASE()" in query
+        assert "CURRENT_DATABASE()" not in query
         assert params == []
 
     def test_with_catalog(self):
@@ -435,8 +435,7 @@ class TestDoGetDbSchemas:
         table = _execute_query(
             conn,
             "SELECT catalog_name, schema_name AS db_schema_name "
-            "FROM information_schema.schemata "
-            "WHERE catalog_name = CURRENT_DATABASE()",
+            "FROM information_schema.schemata",
         )
         assert table.num_rows > 0
         assert "db_schema_name" in table.schema.names
@@ -462,11 +461,67 @@ class TestDoGetTables:
         conn = server_with_data._get_session(ctx)
         table = _execute_query(
             conn,
-            "SELECT table_name FROM information_schema.tables "
-            "WHERE table_catalog = CURRENT_DATABASE()",
+            "SELECT table_name FROM information_schema.tables",
         )
         names = table.column("table_name").to_pylist()
         assert "test_table" in names
+
+
+@pytest.fixture
+def server_with_attached_catalog(ctx):
+    srv = DuckDBFlightSqlServer.__new__(DuckDBFlightSqlServer)
+    srv._db = duckdb.connect(":memory:")
+    srv._db.execute("ATTACH ':memory:' AS lakehouse")
+
+    from lakehouse.session import SessionManager
+
+    srv._sessions = SessionManager(srv._db, ducklake_alias="lakehouse")
+    srv._prepared_meta = {}
+
+    conn = srv._get_session(ctx)
+    conn.execute('CREATE TABLE "lakehouse".main.alias_table (id INT)')
+    return srv
+
+
+class TestCataloglessMetadataWithAttachedCatalog:
+    def test_db_schemas_handler_accepts_catalogless_attached_catalog(self, server_with_attached_catalog, ctx):
+        cmd = fs.CommandGetDbSchemas(db_schema_filter_pattern="main")
+        with patch("lakehouse.server._record_batch_stream", side_effect=lambda table: table) as stream_factory:
+            table = server_with_attached_catalog.do_get_db_schemas(ctx, cmd)
+
+        assert stream_factory.call_count == 1
+        assert isinstance(table, pa.Table)
+        rows = list(
+            zip(
+                table.column("catalog_name").to_pylist(),
+                table.column("db_schema_name").to_pylist(),
+                strict=True,
+            )
+        )
+        assert ("lakehouse", "main") in rows
+
+    def test_tables_handler_accepts_catalogless_attached_catalog(self, server_with_attached_catalog, ctx):
+        cmd = fs.CommandGetTables(db_schema_filter_pattern="main", table_name_filter_pattern="alias_table")
+        with patch("lakehouse.server._record_batch_stream", side_effect=lambda table: table) as stream_factory:
+            table = server_with_attached_catalog.do_get_tables(ctx, cmd)
+
+        assert stream_factory.call_count == 1
+        assert isinstance(table, pa.Table)
+        assert table.num_rows == 1
+        assert table.column("catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("db_schema_name")[0].as_py() == "main"
+        assert table.column("table_name")[0].as_py() == "alias_table"
+
+    def test_unfiltered_table_query_still_sees_attached_catalog(self, server_with_attached_catalog, ctx):
+        conn = server_with_attached_catalog._get_session(ctx)
+        query, params = _prepare_get_tables_query(
+            fs.CommandGetTables(db_schema_filter_pattern="main", table_name_filter_pattern="alias_table")
+        )
+        table = _execute_query(conn, query, params or None)
+
+        assert table.num_rows == 1
+        assert table.column("catalog_name")[0].as_py() == "lakehouse"
+        assert table.column("table_name")[0].as_py() == "alias_table"
 
     def test_filters_by_table_type_view(self, server_with_data, ctx):
         cmd = fs.CommandGetTables(table_types=["VIEW"])
