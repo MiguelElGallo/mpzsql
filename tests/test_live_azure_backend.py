@@ -24,6 +24,7 @@ import uuid
 import pytest
 
 from lakehouse._azd_env import resolve_container_app_env
+from tests._jdbc_bridge import jdbc_test_classes_for
 
 _LIVE_BACKEND_FLAG = "LAKEHOUSE_LIVE_BACKEND"
 _LIVE_BACKEND_ADBC_BASIC_FLAG = "LAKEHOUSE_LIVE_BACKEND_ADBC_BASIC"
@@ -235,6 +236,13 @@ def _run_live_jdbc_test(test_class: str) -> None:
     assert result.returncode == 0, f"mvn test failed (exit {result.returncode})"
 
 
+def _run_live_jdbc_tests(test_classes: list[str]) -> None:
+    if not test_classes:
+        pytest.skip("No live JDBC test classes discovered")
+
+    _run_live_jdbc_test(",".join(test_classes))
+
+
 def _unique_table(prefix: str) -> str:
     return f"live_adbc_{prefix}_{uuid.uuid4().hex[:12]}"
 
@@ -380,7 +388,7 @@ def test_deployed_container_app_persists_writes_after_disconnect():
 
 
 def test_deployed_container_app_persists_jdbc_writes_after_disconnect():
-    _run_live_jdbc_test("FlightSqlJdbcAzurePersistenceTest")
+    _run_live_jdbc_tests(jdbc_test_classes_for("live"))
 
 
 def test_deployed_container_app_supports_adbc_execute_partitions():

@@ -22,6 +22,7 @@ import duckdb
 import pytest
 
 from lakehouse._azd_env import apply_env_resolution, postgres_firewall_hint, resolve_ducklake_env
+from tests._jdbc_bridge import jdbc_test_classes_for
 
 # ───────────────────────────────────────────────────────────────────────────
 # Skip conditions
@@ -109,9 +110,10 @@ def test_jdbc_integration(ducklake_server):
     """Run Maven JDBC tests against the running DuckLake Flight SQL server."""
     _srv, port = ducklake_server
     url = f"grpc://127.0.0.1:{port}"
+    test_classes = jdbc_test_classes_for("local")
 
     result = subprocess.run(
-        ["mvn", "-q", "test", f"-Dflight.url={url}", "-Dtest=FlightSqlJdbcTest"],
+        ["mvn", "-q", "test", f"-Dflight.url={url}", f"-Dtest={','.join(test_classes)}"],
         cwd=_JDBC_DIR,
         capture_output=True,
         text=True,

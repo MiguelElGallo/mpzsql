@@ -7,10 +7,16 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 import duckdb
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from lakehouse._azd_env import apply_env_resolution, postgres_firewall_hint, resolve_ducklake_env
+from tests._jdbc_bridge import jdbc_test_classes_for
 
 
 def _free_port() -> int:
@@ -74,7 +80,13 @@ def main() -> int:
     time.sleep(0.5)
 
     script_dir = os.path.dirname(__file__)
-    command = ["mvn", "-q", "test", f"-Dflight.url={location}", "-Dtest=FlightSqlJdbcTest"]
+    command = [
+        "mvn",
+        "-q",
+        "test",
+        f"-Dflight.url={location}",
+        f"-Dtest={','.join(jdbc_test_classes_for('local'))}",
+    ]
     env = os.environ.copy()
     env["MAVEN_OPTS"] = f"{env.get('MAVEN_OPTS', '').strip()} -Duser.timezone=UTC".strip()
 

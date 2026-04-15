@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 from lakehouse.server import DuckDBFlightSqlServer
+from tests._jdbc_bridge import jdbc_test_classes_for
 
 # ───────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -243,6 +244,7 @@ def test_jdbc_over_tls(tls_server, tls_artifacts):
     """Run the JDBC TLS test class against our TLS-enabled server."""
     _ca_cert, _cert, _key, _tmpdir = tls_artifacts
     _srv, port = tls_server
+    test_classes = jdbc_test_classes_for("tls")
 
     result = subprocess.run(
         [
@@ -250,7 +252,7 @@ def test_jdbc_over_tls(tls_server, tls_artifacts):
             "-q",
             "test",
             f"-Dflight.url=grpc+tls://127.0.0.1:{port}",
-            "-Dtest=FlightSqlJdbcTlsTest",
+            f"-Dtest={','.join(test_classes)}",
         ],
         cwd=_JDBC_DIR,
         capture_output=True,

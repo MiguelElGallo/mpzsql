@@ -36,6 +36,10 @@ class FlightSqlJdbcTest {
         return ALIAS + "." + SCHEMA + "." + table;
     }
 
+    private static String uniqueTable(String prefix) {
+        return "t_jdbc_" + prefix + "_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    }
+
     @BeforeAll
     static void connect() throws SQLException {
         String url = System.getProperty("flight.url", "grpc://127.0.0.1:31337");
@@ -165,7 +169,7 @@ class FlightSqlJdbcTest {
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, 42);
             ps.setString(2, "answer");
-            ps.executeUpdate();
+            assertEquals(1, ps.executeUpdate());
         }
 
         try (ResultSet rs = query("SELECT id, label FROM " + fq(t))) {
@@ -235,5 +239,125 @@ class FlightSqlJdbcTest {
         // DROP
         exec("DROP TABLE " + fq(t));
         assertThrows(SQLException.class, () -> query("SELECT 1 FROM " + fq(t)));
+    }
+
+    @Test
+    @Order(9)
+    void statementExecuteUpdateReturnsRowCounts() throws SQLException {
+        String t = uniqueTable("counts");
+        dropIfExists(t);
+        try {
+            try (Statement st = conn.createStatement()) {
+                st.execute("CREATE TABLE " + fq(t) + " (id INT, val TEXT)");
+                assertEquals(2, st.executeUpdate("INSERT INTO " + fq(t) + " VALUES (1, 'a'), (2, 'b')"));
+                assertEquals(1, st.executeUpdate("UPDATE " + fq(t) + " SET val = 'z' WHERE id = 2"));
+                assertEquals(1, st.executeUpdate("DELETE FROM " + fq(t) + " WHERE id = 1"));
+            }
+
+            try (ResultSet rs = query("SELECT id, val FROM " + fq(t) + " ORDER BY id")) {
+                assertTrue(rs.next());
+                assertEquals(2, rs.getInt(1));
+                assertEquals("z", rs.getString(2));
+                assertFalse(rs.next());
+            }
+        } finally {
+            dropIfExists(t);
+        }
+    }
+
+    @Test
+    @Order(10)
+    void metadataAndResultSetMetadataAreExposed() throws SQLException {
+        String t = uniqueTable("meta");
+        dropIfExists(t);
+        try {
+            exec("CREATE TABLE " + fq(t) + " (id INT, name TEXT, created_at TIMESTAMP)");
+            exec("INSERT INTO " + fq(t) + " VALUES (1, 'alpha', TIMESTAMP '2026-02-12 10:00:00')");
+
+            assertTrue(conn.isValid(2));
+
+            DatabaseMetaData meta = conn.getMetaData();
+            boolean sawCatalog = false;
+            try (ResultSet rs = meta.getCatalogs()) {
+                while (rs.next()) {
+                    if (ALIAS.equals(rs.getString("TABLE_CAT"))) {
+                        sawCatalog = true;
+                        break;
+                    }
+                }
+            }
+            assertTrue(sawCatalog, "catalog list should include " + ALIAS);
+
+            boolean sawSchema = false;
+            try (ResultSet rs = meta.getSchemas(ALIAS, SCHEMA)) {
+                while (rs.next()) {
+                    if (ALIAS.equals(rs.getString("TABLE_CATALOG"))
+                            && SCHEMA.equals(rs.getString("TABLE_SCHEM"))) {
+                        sawSchema = true;
+                        break;
+                    }
+                }
+            }
+            assertTrue(sawSchema, "schema list should include " + ALIAS + "." + SCHEMA);
+
+            try (ResultSet rs = meta.getTables(ALIAS, SCHEMA, t, new String[] {"BASE TABLE"})) {
+                assertTrue(rs.next());
+                assertEquals(ALIAS, rs.getString("TABLE_CAT"));
+                assertEquals(SCHEMA, rs.getString("TABLE_SCHEM"));
+                assertEquals(t, rs.getString("TABLE_NAME"));
+                assertEquals("BASE TABLE", rs.getString("TABLE_TYPE"));
+                assertFalse(rs.next());
+            }
+
+            try (ResultSet rs = meta.getColumns(ALIAS, SCHEMA, t, null)) {
+                String[] expectedNames = {"id", "name", "created_at"};
+                int[] expectedTypes = {Types.INTEGER, Types.VARCHAR, Types.TIMESTAMP};
+                int index = 0;
+                while (rs.next()) {
+                    assertTrue(index < expectedNames.length);
+                    assertEquals(expectedNames[index], rs.getString("COLUMN_NAME"));
+                    assertEquals(expectedTypes[index], rs.getInt("DATA_TYPE"));
+                    index++;
+                }
+                assertEquals(expectedNames.length, index);
+            }
+
+            try (ResultSet rs = meta.getPrimaryKeys(ALIAS, SCHEMA, t)) {
+                assertFalse(rs.next());
+            }
+
+            try (ResultSet rs = meta.getImportedKeys(ALIAS, SCHEMA, t)) {
+                assertFalse(rs.next());
+            }
+
+            try (ResultSet rs = meta.getExportedKeys(ALIAS, SCHEMA, t)) {
+                assertFalse(rs.next());
+            }
+
+            try (ResultSet rs = meta.getCrossReference(ALIAS, SCHEMA, t, ALIAS, SCHEMA, t)) {
+                assertFalse(rs.next());
+            }
+
+            try (ResultSet rs = query("SELECT id, name, created_at FROM " + fq(t) + " ORDER BY id")) {
+                ResultSetMetaData rsmd = rs.getMetaData();
+                assertEquals(3, rsmd.getColumnCount());
+                assertEquals("id", rsmd.getColumnLabel(1));
+                assertEquals(Types.INTEGER, rsmd.getColumnType(1));
+                assertEquals("name", rsmd.getColumnLabel(2));
+                assertEquals(Types.VARCHAR, rsmd.getColumnType(2));
+                assertEquals("created_at", rsmd.getColumnLabel(3));
+                assertEquals(Types.TIMESTAMP, rsmd.getColumnType(3));
+
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt("id"));
+                assertEquals("alpha", rs.getString("name"));
+                assertEquals(
+                        Timestamp.valueOf("2026-02-12 10:00:00"),
+                        rs.getTimestamp("created_at", UTC_CALENDAR));
+                assertFalse(rs.next());
+            }
+        } finally {
+            dropIfExists(t);
+        }
     }
 }

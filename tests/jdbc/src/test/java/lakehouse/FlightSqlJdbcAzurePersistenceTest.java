@@ -22,10 +22,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
+import java.sql.ResultSetMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Properties;
 import java.util.UUID;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -41,6 +44,10 @@ class FlightSqlJdbcAzurePersistenceTest {
 
     private static String fq(String table) {
         return ALIAS + "." + SCHEMA + "." + table;
+    }
+
+    private static String uniqueTable(String prefix) {
+        return "live_jdbc_" + prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }
 
     private static EndpointTarget parseEndpoint(String rawEndpoint) {
@@ -111,6 +118,32 @@ class FlightSqlJdbcAzurePersistenceTest {
         return DriverManager.getConnection(jdbc);
     }
 
+    private static Connection connectWithProperties() throws SQLException {
+        String endpoint = System.getProperty("flight.url");
+        String password = System.getenv("FLIGHT_PASSWORD");
+        String username = System.getProperty("flight.user", DEFAULT_USER);
+        boolean required = Boolean.getBoolean("live.azure.jdbc.required");
+        if (!isConfigured(username)) {
+            username = DEFAULT_USER;
+        }
+
+        if (required) {
+            assertTrue(isConfigured(endpoint), "flight.url is required");
+            assertTrue(isConfigured(password), "FLIGHT_PASSWORD is required");
+        } else {
+            Assumptions.assumeTrue(isConfigured(endpoint), "flight.url is required");
+            Assumptions.assumeTrue(isConfigured(password), "FLIGHT_PASSWORD is required");
+        }
+
+        EndpointTarget target = parseEndpoint(endpoint);
+        String jdbc = "jdbc:arrow-flight-sql://" + target.host() + ":" + target.port();
+        Properties props = new Properties();
+        props.setProperty("useEncryption", String.valueOf(target.useEncryption()));
+        props.setProperty("user", username);
+        props.setProperty("password", password);
+        return DriverManager.getConnection(jdbc, props);
+    }
+
     private static void dropBestEffort(String table) {
         try (Connection conn = connect();
              Statement st = conn.createStatement()) {
@@ -122,21 +155,27 @@ class FlightSqlJdbcAzurePersistenceTest {
 
     @Test
     void persistsWritesAcrossJdbcConnections() throws SQLException {
-        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String table = fq("live_jdbc_persist_" + suffix);
+        String table = fq(uniqueTable("persist"));
 
         try {
             try (Connection writer = connect();
                  Statement st = writer.createStatement()) {
+                assertTrue(writer.isValid(2));
                 writer.setAutoCommit(true);
                 st.execute("DROP TABLE IF EXISTS " + table);
                 st.execute("CREATE TABLE " + table + " (id INT, label TEXT)");
-                st.execute("INSERT INTO " + table + " VALUES (101, 'alpha'), (202, 'beta')");
+                assertEquals(2, st.executeUpdate("INSERT INTO " + table + " VALUES (101, 'alpha'), (202, 'beta')"));
             }
 
             try (Connection reader = connect();
                  Statement st = reader.createStatement();
                  ResultSet rs = st.executeQuery("SELECT id, label FROM " + table + " ORDER BY id")) {
+                assertTrue(reader.isValid(2));
+                ResultSetMetaData md = rs.getMetaData();
+                assertEquals(2, md.getColumnCount());
+                assertEquals("id", md.getColumnLabel(1));
+                assertEquals("label", md.getColumnLabel(2));
+
                 assertTrue(rs.next());
                 assertEquals(101, rs.getInt("id"));
                 assertEquals("alpha", rs.getString("label"));
@@ -145,6 +184,149 @@ class FlightSqlJdbcAzurePersistenceTest {
                 assertEquals(202, rs.getInt("id"));
                 assertEquals("beta", rs.getString("label"));
 
+                assertFalse(rs.next());
+            }
+        } finally {
+            dropBestEffort(table);
+        }
+    }
+
+    @Test
+    void propertiesConnectionAndMetadataWorkAgainstLiveAzure() throws SQLException {
+        String table = uniqueTable("meta");
+        String fqTable = fq(table);
+
+        try {
+            try (Connection conn = connectWithProperties();
+                 Statement st = conn.createStatement()) {
+                assertTrue(conn.isValid(2));
+                st.execute("DROP TABLE IF EXISTS " + fqTable);
+                st.execute(
+                        "CREATE TABLE " + fqTable + " (id INT, label TEXT, created_at TIMESTAMP)"
+                );
+                assertEquals(
+                        1,
+                        st.executeUpdate(
+                                "INSERT INTO " + fqTable
+                                        + " VALUES (1, 'alpha', TIMESTAMP '2026-02-12 10:00:00')"
+                        )
+                );
+            }
+
+            try (Connection conn = connectWithProperties()) {
+                DatabaseMetaData meta = conn.getMetaData();
+                assertNotNull(meta.getDriverName());
+                assertNotNull(meta.getDriverVersion());
+                assertNotNull(meta.getDatabaseProductName());
+                assertNotNull(meta.getDatabaseProductVersion());
+
+                boolean sawCatalog = false;
+                try (ResultSet rs = meta.getCatalogs()) {
+                    while (rs.next()) {
+                        if (ALIAS.equals(rs.getString("TABLE_CAT"))) {
+                            sawCatalog = true;
+                            break;
+                        }
+                    }
+                }
+                assertTrue(sawCatalog, "catalog list should include " + ALIAS);
+
+                boolean sawSchema = false;
+                try (ResultSet rs = meta.getSchemas(ALIAS, SCHEMA)) {
+                    while (rs.next()) {
+                        if (ALIAS.equals(rs.getString("TABLE_CATALOG"))
+                                && SCHEMA.equals(rs.getString("TABLE_SCHEM"))) {
+                            sawSchema = true;
+                            break;
+                        }
+                    }
+                }
+                assertTrue(sawSchema, "schema list should include " + ALIAS + "." + SCHEMA);
+
+                try (ResultSet rs = meta.getTables(ALIAS, SCHEMA, table, new String[] {"BASE TABLE"})) {
+                    assertTrue(rs.next());
+                    assertEquals(ALIAS, rs.getString("TABLE_CAT"));
+                    assertEquals(SCHEMA, rs.getString("TABLE_SCHEM"));
+                    assertEquals(table, rs.getString("TABLE_NAME"));
+                    assertFalse(rs.next());
+                }
+
+                try (ResultSet rs = meta.getColumns(ALIAS, SCHEMA, table, null)) {
+                    String[] expectedNames = {"id", "label", "created_at"};
+                    int[] expectedTypes = {
+                            java.sql.Types.INTEGER,
+                            java.sql.Types.VARCHAR,
+                            java.sql.Types.TIMESTAMP,
+                    };
+                    int index = 0;
+                    while (rs.next()) {
+                        assertTrue(index < expectedNames.length);
+                        assertEquals(expectedNames[index], rs.getString("COLUMN_NAME"));
+                        assertEquals(expectedTypes[index], rs.getInt("DATA_TYPE"));
+                        index++;
+                    }
+                    assertEquals(expectedNames.length, index);
+                }
+
+                try (ResultSet rs = meta.getPrimaryKeys(ALIAS, SCHEMA, table)) {
+                    assertFalse(rs.next());
+                }
+
+                try (ResultSet rs = meta.getImportedKeys(ALIAS, SCHEMA, table)) {
+                    assertFalse(rs.next());
+                }
+
+                try (ResultSet rs = meta.getExportedKeys(ALIAS, SCHEMA, table)) {
+                    assertFalse(rs.next());
+                }
+
+                try (ResultSet rs = meta.getCrossReference(ALIAS, SCHEMA, table, ALIAS, SCHEMA, table)) {
+                    assertFalse(rs.next());
+                }
+
+                try (Statement st = conn.createStatement();
+                     ResultSet rs = st.executeQuery("SELECT id, label, created_at FROM " + fqTable)) {
+                    ResultSetMetaData md = rs.getMetaData();
+                    assertEquals(3, md.getColumnCount());
+                    assertEquals("id", md.getColumnLabel(1));
+                    assertEquals("label", md.getColumnLabel(2));
+                    assertEquals("created_at", md.getColumnLabel(3));
+                    assertTrue(rs.next());
+                    assertEquals(1, rs.getInt("id"));
+                    assertEquals("alpha", rs.getString("label"));
+                    assertFalse(rs.next());
+                }
+            }
+        } finally {
+            dropBestEffort(fqTable);
+        }
+    }
+
+    @Test
+    void manualCommitPersistsRowsAcrossLiveJdbcConnections() throws SQLException {
+        String table = fq(uniqueTable("commit"));
+
+        try {
+            try (Connection setup = connect();
+                 Statement st = setup.createStatement()) {
+                st.execute("DROP TABLE IF EXISTS " + table);
+                st.execute("CREATE TABLE " + table + " (id INT, label TEXT)");
+            }
+
+            try (Connection writer = connect();
+                 Statement st = writer.createStatement()) {
+                writer.setAutoCommit(false);
+                assertFalse(writer.getAutoCommit());
+                assertEquals(1, st.executeUpdate("INSERT INTO " + table + " VALUES (1, 'committed')"));
+                writer.commit();
+            }
+
+            try (Connection reader = connect();
+                 Statement st = reader.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT id, label FROM " + table)) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt("id"));
+                assertEquals("committed", rs.getString("label"));
                 assertFalse(rs.next());
             }
         } finally {
